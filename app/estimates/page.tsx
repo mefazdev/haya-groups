@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import EstimatesApp from "@/components/estimate/EstimatesClient";
 
 export const metadata: Metadata = {
-  title: "Estimates | Haya Convention Center",
+  title: "Estimates | Adco Caterers",
   robots: { index: false, follow: false },
 };
 

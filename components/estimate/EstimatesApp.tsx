@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useState } from "react";
 import type { Estimate } from "@/lib/estimate/types";
 import { formatDate, formatINR, grandTotalOf } from "@/lib/estimate/utils";
@@ -51,9 +50,9 @@ export default function EstimatesApp() {
     <div className="min-h-screen bg-[#0a0a0a] text-gray-100 font-inter">
       <header className="border-b border-white/5 py-4">
         <div className="max-w-275 mx-auto px-3 md:px-8 flex items-center justify-between gap-4">
-          <Link href="/" className="relative h-12 w-24 block">
-            <Image src="/images/logo-1.png" alt="Haya Convention Center" className="object-contain" fill />
-          </Link>
+          <div className="relative h-12 w-16">
+            <Image src="/images/adco-logo.png" alt="Adco Caterers" className="object-contain" fill />
+          </div>
           <span className="text-xs uppercase tracking-[0.2em] text-primary">Estimates</span>
         </div>
       </header>

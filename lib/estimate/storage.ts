@@ -44,7 +44,7 @@ export const resetTemplate = () => localStorage.removeItem(TEMPLATE_KEY);
 const nextNumber = () => {
   const n = read<number>(COUNTER_KEY, 0) + 1;
   write(COUNTER_KEY, n);
-  return `HAYA-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`;
+  return `ADCO-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`;
 };
 
 const today = () => {

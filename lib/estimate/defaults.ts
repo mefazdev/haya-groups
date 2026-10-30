@@ -16,15 +16,15 @@ export const buildDefaultTemplate = (): Estimate => ({
   date: "",
   documentTitle: "Estimate",
   company: {
-    name: "Haya Convention Center",
-    tagline: "Events & Catering",
+    name: "Adco Caterers",
+    tagline: "",
     address: "Parappanangadi, Malappuram, Kerala",
-    phone: "+91 9544100440",
-    email: "hayagroup@gmail.com",
-    website: "www.hayagroup.in",
+    phone: "+91 9061100440, +91 8281806614",
+    email: "",
+    website: "",
   },
   client: { name: "", phone: "", address: "" },
-  event: { date: "", venue: "Haya Convention Center", pax: "", time: "Lunch", nature: "" },
+  event: { date: "", venue: "", pax: "", time: "Lunch", nature: "" },
   showCover: true,
   menuTitle: "Menu Prospectus",
   sections: [
@@ -165,7 +165,7 @@ export const buildDefaultTemplate = (): Estimate => ({
   signatory: {
     name: "",
     title: "Sales & Events",
-    contact: "+91 9544100440 | hayagroup@gmail.com",
+    contact: "+91 9061100440, +91 8281806614",
   },
   updatedAt: 0,
 });

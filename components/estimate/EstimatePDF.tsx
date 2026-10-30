@@ -37,7 +37,7 @@ const s = StyleSheet.create({
   cover: { backgroundColor: DARK, color: CREAM, fontFamily: "Sans", padding: 0 },
   coverFrame: { position: "absolute", top: 28, left: 28, right: 28, bottom: 28, borderWidth: 0.8, borderColor: GOLD, borderRadius: 26 },
   coverBody: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 72 },
-  coverLogo: { width: 150, height: 180, objectFit: "contain", marginBottom: 28 },
+  coverLogo: { width: 210, height: 160, objectFit: "contain", marginBottom: 28 },
   coverName: { fontFamily: "Serif", fontSize: 30, color: GOLD, textAlign: "center" },
   coverTagline: { fontSize: 11, letterSpacing: 4, textTransform: "uppercase", color: "#cbbf9f", marginTop: 8 },
   coverRule: { width: 60, height: 1, backgroundColor: GOLD, marginVertical: 30 },
@@ -56,7 +56,7 @@ const s = StyleSheet.create({
 
   band: { backgroundColor: DARK, marginHorizontal: -64, marginTop: -56, paddingHorizontal: 64, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   bandTitle: { color: GOLD, fontSize: 18, letterSpacing: 8, textTransform: "uppercase" },
-  bandLogo: { width: 38, height: 46, objectFit: "contain" },
+  bandLogo: { width: 62, height: 47, objectFit: "contain" },
   row: { flexDirection: "row" },
   companyName: { fontFamily: "Serif", fontWeight: "bold", fontSize: 13, color: DEEP, marginBottom: 3 },
   small: { fontSize: 9, color: MUTED, lineHeight: 1.45 },
@@ -124,7 +124,7 @@ export function EstimateDocument({ q, logoSrc }: { q: Estimate; logoSrc: string 
           <View style={s.coverBody}>
             {/* eslint-disable-next-line jsx-a11y/alt-text */}
             <Image src={logoSrc} style={s.coverLogo} />
-            <Text style={s.coverName}>{q.company.name}</Text>
+            {/* <Text style={s.coverName}>{q.company.name}</Text> */}
             {q.company.tagline ? <Text style={s.coverTagline}>{q.company.tagline}</Text> : null}
             <View style={s.coverRule} />
             <Text style={s.coverDoc}>{q.documentTitle} prepared for</Text>
@@ -284,5 +284,5 @@ export async function renderEstimatePdf(q: Estimate): Promise<Blob> {
   const { pdf } = await import("@react-pdf/renderer");
   const origin = window.location.origin;
   registerFonts(origin);
-  return pdf(<EstimateDocument q={q} logoSrc={`${origin}/images/logo-1.png`} />).toBlob();
+  return pdf(<EstimateDocument q={q} logoSrc={`${origin}/images/adco-logo.png`} />).toBlob();
 }
