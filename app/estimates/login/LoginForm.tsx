@@ -5,8 +5,8 @@ import type { LoginState } from "@/lib/estimate/auth";
 import { login } from "../actions";
 
 const inputCls =
-  "w-full min-h-11 bg-[#0a0a0a] border border-[#333] px-3 py-2.5 text-base text-gray-100 focus:outline-none focus:border-primary transition-colors";
-const labelCls = "block text-[11px] uppercase tracking-wider text-gray-400 mb-1.5";
+  "w-full min-h-12 rounded-lg bg-white border border-[#a08f70] px-3 py-2.5 text-base text-[#26221c] focus:outline-none focus:border-[#6f5629] focus:ring-2 focus:ring-[#a88a55]/40 transition-colors";
+const labelCls = "block text-sm font-medium text-[#3d362c] mb-1.5";
 
 const initialState: LoginState = {};
 
@@ -23,11 +23,11 @@ export default function LoginForm() {
         <span className={labelCls}>Password</span>
         <input name="password" type="password" className={inputCls} autoComplete="current-password" required />
       </label>
-      {state.error && <p role="alert" className="text-sm text-red-300">{state.error}</p>}
+      {state.error && <p role="alert" className="text-base text-[#a32a1c]">{state.error}</p>}
       <button
         type="submit"
         disabled={pending}
-        className="w-full min-h-11 text-xs uppercase tracking-wider bg-primary text-[#050505] border border-primary px-4 py-2 font-medium hover:bg-primary-hover transition-colors disabled:opacity-50"
+        className="w-full min-h-12 rounded-lg bg-[#6f5629] px-4 py-2 text-base font-medium text-white hover:bg-[#5c4726] transition-colors disabled:opacity-50"
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>
