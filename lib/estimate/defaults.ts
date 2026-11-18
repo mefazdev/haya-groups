@@ -149,9 +149,9 @@ const templateFor = (party: Party): Estimate => ({
   showCover: true,
   menuTitle: "Menu Prospectus",
   costs: [
-    { id: uid(), description: "Total Food Cost", remarks: "", amount: 0, partyId: party.id },
-    { id: uid(), description: "Disposables", remarks: "", amount: 0 },
-    { id: uid(), description: "Service Cost", remarks: "", amount: 0 },
+    { id: uid(), description: "Total Food Cost", amount: 0, partyId: party.id },
+    { id: uid(), description: "Disposables", amount: 0 },
+    { id: uid(), description: "Service Cost", amount: 0 },
   ],
   quantityNote:
     "Please note that the food quantity is based on standard serving sizes and trends. The quantity is calculated for the total number of persons mentioned, considering all food items together.",

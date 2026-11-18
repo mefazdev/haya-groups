@@ -339,7 +339,7 @@ export default function EstimateEditor({ initial, onBack }: Props) {
       for (const p of d.parties) {
         if (d.costs.some((c) => c.partyId === p.id)) continue;
         const at = d.costs.map((c) => !!c.partyId).lastIndexOf(true) + 1;
-        d.costs.splice(at, 0, { id: uid(), description: "Total Food Cost", remarks: "", amount: 0, partyId: p.id });
+        d.costs.splice(at, 0, { id: uid(), description: "Total Food Cost", amount: 0, partyId: p.id });
       }
     });
     setActivePartyId(next.id);
@@ -719,14 +719,13 @@ export default function EstimateEditor({ initial, onBack }: Props) {
         <Card
           title="Pricing"
           actions={
-            <button className={btnCls} onClick={() => update((d) => { d.costs.push({ id: uid(), description: "", remarks: "", amount: 0 }); })}>
+            <button className={btnCls} onClick={() => update((d) => { d.costs.push({ id: uid(), description: "", amount: 0 }); })}>
               + Row
             </button>
           }
         >
-          <div className="hidden md:grid grid-cols-[1fr_1fr_9rem_2rem] gap-2 text-[11px] uppercase tracking-wider text-gray-500 px-1 mb-2">
+          <div className="hidden md:grid grid-cols-[1fr_9rem_2rem] gap-2 text-[11px] uppercase tracking-wider text-gray-500 px-1 mb-2">
             <span>Description</span>
-            <span>Remarks</span>
             <span className="text-right">Amount (₹)</span>
             <span />
           </div>
@@ -735,7 +734,7 @@ export default function EstimateEditor({ initial, onBack }: Props) {
               // A party's food cost row follows the party, so it is named and removed with it.
               const isPartyRow = hasManyParties && !!c.partyId;
               return (
-              <div key={c.id} className="grid grid-cols-[1fr_auto] md:grid-cols-[1fr_1fr_9rem_2rem] gap-2 py-3 first:pt-0 md:py-0">
+              <div key={c.id} className="grid grid-cols-[1fr_auto] md:grid-cols-[1fr_9rem_2rem] gap-2 py-3 first:pt-0 md:py-0">
                 <input
                   className={`${inputCls} col-span-2 md:col-span-1 read-only:text-gray-400`}
                   value={costLabel(q, c)}
@@ -743,13 +742,6 @@ export default function EstimateEditor({ initial, onBack }: Props) {
                   placeholder="Description"
                   aria-label="Description"
                   onChange={(e) => update((d) => { d.costs[ci].description = e.target.value; })}
-                />
-                <input
-                  className={`${inputCls} col-span-2 md:col-span-1`}
-                  value={c.remarks}
-                  placeholder="Remarks (optional)"
-                  aria-label="Remarks"
-                  onChange={(e) => update((d) => { d.costs[ci].remarks = e.target.value; })}
                 />
                 <input
                   type="number"

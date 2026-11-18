@@ -38,63 +38,64 @@ const PALETTE: Palette = {
 };
 
 const makeStyles = ({ ACCENT, DEEP, INK, MUTED, PAGE, COVER, COVER_TEXT, COVER_MUTED, BAND, LINE, TABLE_HEAD }: Palette) => StyleSheet.create({
-  page: { backgroundColor: PAGE, fontFamily: "Sans", fontSize: 12, color: INK, paddingTop: 56, paddingBottom: 72, paddingHorizontal: 56 },
-  frame: { position: "absolute", top: 24, left: 24, right: 24, bottom: 48, borderWidth: 0.8, borderColor: ACCENT, borderRadius: 22 },
-  footer: { position: "absolute", left: 40, right: 40, bottom: 22, flexDirection: "row", justifyContent: "space-between", fontSize: 9.5, color: MUTED },
+  page: { backgroundColor: PAGE, fontFamily: "Sans", fontSize: 17, color: INK, paddingTop: 44, paddingBottom: 62, paddingHorizontal: 36 },
+  frame: { position: "absolute", top: 14, left: 14, right: 14, bottom: 40, borderWidth: 0.8, borderColor: ACCENT, borderRadius: 22 },
+  footer: { position: "absolute", left: 24, right: 24, bottom: 16, flexDirection: "row", justifyContent: "space-between", fontSize: 12, color: MUTED },
 
   cover: { backgroundColor: COVER, color: COVER_TEXT, fontFamily: "Sans", padding: 0 },
   coverFrame: { position: "absolute", top: 28, left: 28, right: 28, bottom: 28, borderWidth: 0.8, borderColor: ACCENT, borderRadius: 26 },
-  coverBody: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 72 },
+  coverBody: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 48 },
   coverLogo: { width: 210, height: 160, objectFit: "contain", marginBottom: 28 },
-  coverName: { fontFamily: "Serif", fontSize: 36, color: ACCENT, textAlign: "center" },
-  coverTagline: { fontSize: 13, letterSpacing: 4, textTransform: "uppercase", color: COVER_MUTED, marginTop: 8 },
+  coverName: { fontFamily: "Serif", fontSize: 50, color: ACCENT, textAlign: "center" },
+  coverTagline: { fontSize: 18, letterSpacing: 4, textTransform: "uppercase", color: COVER_MUTED, marginTop: 8 },
   coverRule: { width: 60, height: 1, backgroundColor: ACCENT, marginVertical: 30 },
-  coverDoc: { fontSize: 12, letterSpacing: 3, textTransform: "uppercase", color: COVER_MUTED },
-  coverClient: { fontFamily: "Serif", fontSize: 24, marginTop: 6, textAlign: "center" },
-  coverEvent: { fontSize: 12, color: COVER_MUTED, marginTop: 10, textAlign: "center" },
-  coverContact: { position: "absolute", left: 64, right: 64, bottom: 60, textAlign: "center", fontSize: 11, color: COVER_MUTED, lineHeight: 1.6 },
+  coverDoc: { fontSize: 17, letterSpacing: 3, textTransform: "uppercase", color: COVER_MUTED },
+  coverClient: { fontFamily: "Serif", fontSize: 34, marginTop: 6, textAlign: "center" },
+  coverEvent: { fontSize: 17, color: COVER_MUTED, marginTop: 10, textAlign: "center" },
+  coverContact: { position: "absolute", left: 44, right: 44, bottom: 52, textAlign: "center", fontSize: 15, color: COVER_MUTED, lineHeight: 1.6 },
 
-  menuTitle: { fontFamily: "Serif", fontWeight: "bold", fontSize: 26.5, color: DEEP, textAlign: "center", marginBottom: 18 },
-  partyName: { fontFamily: "Serif", fontWeight: "bold", fontSize: 18, color: ACCENT, textAlign: "center" },
-  partyMeta: { fontSize: 11, color: MUTED, textAlign: "center", marginTop: 3, marginBottom: 8 },
-  sectionTitle: { fontFamily: "Serif", fontWeight: "bold", fontSize: 15, color: DEEP, marginTop: 14, marginBottom: 6, paddingBottom: 3, borderBottomWidth: 0.6, borderBottomColor: LINE },
+  menuTitle: { fontFamily: "Serif", fontWeight: "bold", fontSize: 37, color: DEEP, textAlign: "center", marginBottom: 10 },
+  partyName: { fontFamily: "Serif", fontWeight: "bold", fontSize: 25, color: ACCENT, textAlign: "center" },
+  partyMeta: { fontSize: 15, color: MUTED, textAlign: "center", marginTop: 3, marginBottom: 8 },
+  sectionTitle: { fontFamily: "Serif", fontWeight: "bold", fontSize: 21, color: DEEP, marginTop: 14, marginBottom: 6, paddingBottom: 3, borderBottomWidth: 0.6, borderBottomColor: LINE },
   items: { flexDirection: "row", flexWrap: "wrap" },
-  item: { flexDirection: "row", paddingVertical: 2, paddingLeft: 10 },
-  bullet: { width: 12, color: ACCENT },
+  item: { flexDirection: "row", paddingVertical: 3, paddingLeft: 4 },
+  bullet: { width: 15, color: ACCENT },
   itemName: { flex: 1 },
   itemQty: { marginLeft: 8, color: DEEP, fontWeight: "bold" },
 
-  band: { backgroundColor: BAND, marginHorizontal: -56, marginTop: -56, paddingHorizontal: 56, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  bandTitle: { color: ACCENT, fontSize: 21.5, letterSpacing: 8, textTransform: "uppercase" },
-  bandLogo: { width: 62, height: 47, objectFit: "contain" },
+  band: { backgroundColor: BAND, marginHorizontal: -36, marginTop: -44, paddingHorizontal: 36, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+  bandTitle: { color: ACCENT, fontSize: 30, letterSpacing: 5, textTransform: "uppercase" },
+  bandLogo: { width: 84, height: 64, objectFit: "contain" },
   row: { flexDirection: "row" },
-  companyName: { fontFamily: "Serif", fontWeight: "bold", fontSize: 15.5, color: DEEP, marginBottom: 3 },
-  small: { fontSize: 11, color: MUTED, lineHeight: 1.45 },
-  metaLabel: { fontSize: 9.5, color: MUTED, textTransform: "uppercase", letterSpacing: 1 },
-  metaValue: { fontSize: 12, fontWeight: "bold", color: DEEP, marginBottom: 6 },
-  blockTitle: { fontSize: 10, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, color: DEEP, paddingBottom: 4, marginBottom: 6, borderBottomWidth: 0.8, borderBottomColor: ACCENT },
+  companyName: { fontFamily: "Serif", fontWeight: "bold", fontSize: 22, color: DEEP, marginBottom: 3 },
+  small: { fontSize: 15, color: MUTED, lineHeight: 1.45 },
+  metaLabel: { fontSize: 15, color: MUTED, textTransform: "uppercase", letterSpacing: 1 },
+  metaValue: { fontSize: 17, fontWeight: "bold", color: DEEP, marginBottom: 6 },
+  blockTitle: { fontSize: 15, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, color: DEEP, paddingBottom: 4, marginBottom: 6, borderBottomWidth: 0.8, borderBottomColor: ACCENT },
   detailRow: { flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.4, borderBottomColor: LINE },
-  detailLabel: { width: 84, color: MUTED, fontSize: 11 },
-  detailValue: { flex: 1, fontSize: 11.5 },
+  detailLabel: { width: 76, color: MUTED, fontSize: 15 },
+  detailValue: { flex: 1, fontSize: 16 },
 
   table: { marginTop: 16, borderWidth: 0.8, borderColor: ACCENT },
   th: { flexDirection: "row", backgroundColor: TABLE_HEAD, borderBottomWidth: 0.8, borderBottomColor: ACCENT },
   tr: { flexDirection: "row", borderBottomWidth: 0.4, borderBottomColor: LINE },
-  cellDesc: { flex: 3, padding: 5, fontWeight: "bold" },
-  cellRemarks: { flex: 2.4, padding: 5, borderLeftWidth: 0.4, borderLeftColor: LINE, color: MUTED },
-  cellAmt: { width: 118, padding: 5, textAlign: "right", borderLeftWidth: 0.4, borderLeftColor: LINE },
-  thText: { fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: DEEP, fontWeight: "bold" },
+  cellDesc: { flex: 3, padding: 7, fontWeight: "bold" },
+  cellAmt: { width: 150, padding: 7, textAlign: "right", borderLeftWidth: 0.4, borderLeftColor: LINE },
+  thText: { fontSize: 15, textTransform: "uppercase", letterSpacing: 1, color: DEEP, fontWeight: "bold" },
 
-  totals: { alignSelf: "flex-end", width: 300, marginTop: 10 },
+  totals: { marginTop: 10 },
   grand: { flexDirection: "row", justifyContent: "space-between", marginTop: 4, paddingTop: 6, borderTopWidth: 0.8, borderTopColor: ACCENT },
-  grandText: { fontSize: 15.5, fontWeight: "bold", color: DEEP },
-  words: { textAlign: "right", fontWeight: "bold", color: DEEP, fontSize: 12, marginTop: 8 },
+  grandText: { fontSize: 22, fontWeight: "bold", color: DEEP },
+  words: { textAlign: "right", fontWeight: "bold", color: DEEP, fontSize: 17, marginTop: 8 },
 
-  notesTitle: { fontSize: 11, fontWeight: "bold", color: DEEP, marginTop: 10, marginBottom: 3 },
-  sign: { width: 170, marginTop: 10, justifyContent: "flex-end", paddingLeft: 12, borderLeftWidth: 0.6, borderLeftColor: LINE },
+  notesTitle: { fontSize: 15, fontWeight: "bold", color: DEEP, marginTop: 16, marginBottom: 4 },
+  sign: { marginTop: 18, paddingTop: 12, borderTopWidth: 0.6, borderTopColor: LINE },
 });
 
 const s = makeStyles(PALETTE);
+
+const MAX_UNBROKEN_ROWS = 18;
 
 const chunk = <T,>(arr: T[], size: number) =>
   Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, (i + 1) * size));
@@ -123,7 +124,6 @@ export function EstimateDocument({ q, logoSrc }: { q: Estimate; logoSrc: string 
   const hasManyParties = q.parties.length > 1;
   const { event } = q.parties[0];
   const total = grandTotalOf(q);
-  const hasRemarks = q.costs.some((c) => c.remarks.trim());
   const eventLine = hasManyParties
     ? ""
     : [event.nature, event.date && formatDate(event.date), event.venue].filter(Boolean).join("  ·  ");
@@ -184,7 +184,8 @@ export function EstimateDocument({ q, logoSrc }: { q: Estimate; logoSrc: string 
               </View>
             );
             return (
-              <View key={sec.id}>
+              // Keep a category on one page unless it is too long to fit.
+              <View key={sec.id} wrap={rows.length > MAX_UNBROKEN_ROWS}>
                 {/* Heading travels with its first row so it is never orphaned at a page end. */}
                 <View wrap={false}>
                   <Text style={s.sectionTitle}>{sec.title}</Text>
@@ -207,7 +208,7 @@ export function EstimateDocument({ q, logoSrc }: { q: Estimate; logoSrc: string 
         </View>
 
         <View style={[s.row, { justifyContent: "space-between" }]}>
-          <View style={{ flex: 1, paddingRight: 20 }}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
             <Text style={s.companyName}>{q.company.name}</Text>
             <Text style={s.small}>{q.company.address}</Text>
             <Text style={s.small}>{[q.company.phone, q.company.website].filter(Boolean).join(" | ")}</Text>
@@ -222,9 +223,9 @@ export function EstimateDocument({ q, logoSrc }: { q: Estimate; logoSrc: string 
         </View>
 
         <View style={[s.row, { marginTop: 20 }]}>
-          <View style={{ flex: 1, marginRight: 24 }}>
+          <View style={{ flex: 1, marginRight: 16 }}>
             <Text style={s.blockTitle}>Bill To</Text>
-            <Text style={{ fontWeight: "bold", fontSize: 12.5 }}>{q.client.name}</Text>
+            <Text style={{ fontWeight: "bold", fontSize: 18 }}>{q.client.name}</Text>
             {q.client.phone ? <Text style={s.small}>{q.client.phone}</Text> : null}
             {q.client.address ? <Text style={s.small}>{q.client.address}</Text> : null}
           </View>
@@ -244,13 +245,11 @@ export function EstimateDocument({ q, logoSrc }: { q: Estimate; logoSrc: string 
         <View style={s.table}>
           <View style={s.th}>
             <Text style={[s.cellDesc, s.thText]}>Description</Text>
-            {hasRemarks ? <Text style={[s.cellRemarks, s.thText]}>Remarks</Text> : null}
             <Text style={[s.cellAmt, s.thText]}>Total (₹)</Text>
           </View>
           {q.costs.map((c, i) => (
             <View key={c.id} style={[s.tr, i === q.costs.length - 1 ? { borderBottomWidth: 0 } : {}]} wrap={false}>
               <Text style={s.cellDesc}>{costLabel(q, c)}</Text>
-              {hasRemarks ? <Text style={s.cellRemarks}>{c.remarks}</Text> : null}
               <Text style={s.cellAmt}>{formatINR(Number(c.amount) || 0)}</Text>
             </View>
           ))}
@@ -265,34 +264,22 @@ export function EstimateDocument({ q, logoSrc }: { q: Estimate; logoSrc: string 
         <Text style={s.words}>{amountInWords(total)}</Text>
 
         {q.quantityNote ? <Text style={[s.small, { marginTop: 14 }]}>** {q.quantityNote} **</Text> : null}
-        <View style={s.row}>
-          <View style={{ flex: 1, paddingRight: 24 }}>
-            {q.paymentTerms ? (
-              <View wrap={false}>
-                <Text style={s.notesTitle}>Payment Terms</Text>
-                <Text style={s.small}>{q.paymentTerms}</Text>
-              </View>
-            ) : null}
-            {q.terms ? (
-              <View wrap={false}>
-                <Text style={s.notesTitle}>Terms & Conditions</Text>
-                <Text style={s.small}>{q.terms}</Text>
-              </View>
-            ) : null}
-            {q.wasteTerms ? (
-              <View wrap={false}>
-                <Text style={s.notesTitle}>Waste Management</Text>
-                <Text style={s.small}>{q.wasteTerms}</Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={s.sign} wrap={false}>
-            <Text style={{ fontSize: 11.5 }}>For {q.company.name},</Text>
-            <View style={{ height: 30 }} />
-            {q.signatory.name ? <Text style={{ fontWeight: "bold" }}>{q.signatory.name}</Text> : null}
-            {q.signatory.title ? <Text style={s.small}>{q.signatory.title}</Text> : null}
-            {q.signatory.contact ? <Text style={s.small}>{q.signatory.contact}</Text> : null}
-          </View>
+        <Footer q={q} />
+      </Page>
+
+      <Page size="A4" style={s.page}>
+        {q.paymentTerms ? <Text style={s.notesTitle}>Payment Terms</Text> : null}
+        {q.paymentTerms ? <Text style={s.small}>{q.paymentTerms}</Text> : null}
+        {q.terms ? <Text style={s.notesTitle}>Terms & Conditions</Text> : null}
+        {q.terms ? <Text style={s.small}>{q.terms}</Text> : null}
+        {q.wasteTerms ? <Text style={s.notesTitle}>Waste Management</Text> : null}
+        {q.wasteTerms ? <Text style={s.small}>{q.wasteTerms}</Text> : null}
+        <View style={s.sign} wrap={false}>
+          <Text>For {q.company.name},</Text>
+          <View style={{ height: 30 }} />
+          {q.signatory.name ? <Text style={{ fontWeight: "bold" }}>{q.signatory.name}</Text> : null}
+          {q.signatory.title ? <Text style={s.small}>{q.signatory.title}</Text> : null}
+          {q.signatory.contact ? <Text style={s.small}>{q.signatory.contact}</Text> : null}
         </View>
         <Footer q={q} />
       </Page>

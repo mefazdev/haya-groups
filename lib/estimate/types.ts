@@ -14,7 +14,6 @@ export interface Section {
 export interface CostRow {
   id: string;
   description: string;
-  remarks: string;
   amount: number;
   // Set on a party's food cost row. Rows without it are shared by the whole estimate.
   partyId?: string;
