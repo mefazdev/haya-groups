@@ -16,6 +16,24 @@ export interface CostRow {
   description: string;
   remarks: string;
   amount: number;
+  // Set on a party's food cost row. Rows without it are shared by the whole estimate.
+  partyId?: string;
+}
+
+export interface EventDetails {
+  date: string;
+  venue: string;
+  pax: string;
+  time: string;
+  nature: string;
+}
+
+// One sitting of the event, such as "Night" or "Convention", with its own menu.
+export interface Party {
+  id: string;
+  name: string;
+  event: EventDetails;
+  sections: Section[];
 }
 
 export interface Estimate {
@@ -36,22 +54,14 @@ export interface Estimate {
     phone: string;
     address: string;
   };
-  event: {
-    date: string;
-    venue: string;
-    pax: string;
-    time: string;
-    nature: string;
-  };
+  parties: Party[];
   showCover: boolean;
   menuTitle: string;
-  sections: Section[];
   costs: CostRow[];
-  taxPercent: number;
-  addTaxToTotal: boolean;
   quantityNote: string;
   paymentTerms: string;
   terms: string;
+  wasteTerms: string;
   signatory: {
     name: string;
     title: string;

@@ -1,16 +1,22 @@
-import type { Estimate } from "./types";
+import type { CostRow, Estimate, Party, Section } from "./types";
 
 export const uid = () =>
   Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
-export const subtotalOf = (q: Estimate) =>
+export const grandTotalOf = (q: Estimate) =>
   q.costs.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
 
-export const taxOf = (q: Estimate) =>
-  Math.round(subtotalOf(q) * (Number(q.taxPercent) || 0)) / 100;
+export const partyLabel = (party: Party, index: number) => party.name.trim() || `Party ${index + 1}`;
 
-export const grandTotalOf = (q: Estimate) =>
-  subtotalOf(q) + (q.addTaxToTotal ? taxOf(q) : 0);
+// With several parties, each food cost row is named after its party.
+export const costLabel = (q: Estimate, cost: CostRow) => {
+  const index = q.parties.findIndex((p) => p.id === cost.partyId);
+  return q.parties.length > 1 && index >= 0 ? `${partyLabel(q.parties[index], index)}: Food Cost` : cost.description;
+};
+
+// Fresh ids so edits to the copy never collide with the source.
+export const copySections = (sections: Section[]): Section[] =>
+  sections.map((s) => ({ ...s, id: uid(), items: s.items.map((it) => ({ ...it, id: uid() })) }));
 
 export const formatINR = (n: number) =>
   n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

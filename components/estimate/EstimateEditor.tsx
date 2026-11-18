@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState, ReactNode } from "react";
 import type { LineItem, Estimate, Section } from "@/lib/estimate/types";
-import { amountInWords, formatINR, grandTotalOf, subtotalOf, taxOf, uid } from "@/lib/estimate/utils";
-import { resetTemplate, saveEstimate, saveTemplate } from "@/lib/estimate/storage";
-import { buildDefaultTemplate } from "@/lib/estimate/defaults";
+import { amountInWords, copySections, costLabel, formatINR, grandTotalOf, partyLabel, uid } from "@/lib/estimate/utils";
+import { saveEstimate } from "@/lib/estimate/storage";
+import { createParty, optionalItemsFor } from "@/lib/estimate/defaults";
 
 // Mobile first: 16px text so iOS doesn't zoom on focus, 44px tap targets; denser from md up.
 const inputCls =
@@ -106,23 +106,24 @@ const parseBulk = (text: string): LineItem[] =>
 
 interface Props {
   initial: Estimate;
-  mode: "estimate" | "template";
   onBack: () => void;
 }
 
-export default function EstimateEditor({ initial, mode, onBack }: Props) {
+export default function EstimateEditor({ initial, onBack }: Props) {
   const [q, setQ] = useState<Estimate>(initial);
   const [saved, setSaved] = useState(true);
-  const [busy, setBusy] = useState<"" | "preview" | "download">("");
+  const [busy, setBusy] = useState<"" | "preview" | "download" | "images">("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [bulkFor, setBulkFor] = useState<string | null>(null);
   const [bulkText, setBulkText] = useState("");
   const [flash, setFlash] = useState("");
-  // Sections start collapsed on phones to keep the page short, expanded on desktop.
-  const [openSections, setOpenSections] = useState<Set<string>>(
-    () => new Set(isDesktop() ? initial.sections.map((s) => s.id) : []),
-  );
+  // Menu sections start collapsed to keep the page short.
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set());
+  const [activePartyId, setActivePartyId] = useState(initial.parties[0].id);
   const firstRender = useRef(true);
+  const partyIndex = Math.max(0, q.parties.findIndex((p) => p.id === activePartyId));
+  const party = q.parties[partyIndex];
+  const hasManyParties = q.parties.length > 1;
 
   const update = (fn: (d: Estimate) => void) => {
     setQ((prev) => {
@@ -141,12 +142,11 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
     }
     setSaved(false);
     const t = setTimeout(() => {
-      if (mode === "template") saveTemplate(q);
-      else saveEstimate(q);
+      saveEstimate(q);
       setSaved(true);
     }, 500);
     return () => clearTimeout(t);
-  }, [q, mode]);
+  }, [q]);
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
@@ -180,19 +180,49 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
     }
   };
 
+  const fileBase = () => `${q.number || "Estimate"}-${q.client.name.trim().replace(/[^\w]+/g, "-") || "client"}`;
+
+  const saveFile = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const download = async () => {
     setBusy("download");
     try {
-      const url = URL.createObjectURL(await buildPdf());
-      const a = document.createElement("a");
-      const who = q.client.name.trim().replace(/[^\w]+/g, "-") || "client";
-      a.href = url;
-      a.download = `${q.number || "Template"}-${who}.pdf`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      saveFile(await buildPdf(), `${fileBase()}.pdf`);
     } catch (e) {
       console.error(e);
       notify("Could not generate PDF");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const downloadImages = async () => {
+    setBusy("images");
+    try {
+      const { renderEstimateImages } = await import("./EstimatePDF");
+      const images = await renderEstimateImages(q);
+      if (images.length === 1) {
+        saveFile(images[0], `${fileBase()}.png`);
+      } else {
+        // One archive means one click and one save prompt, however many pages there are.
+        const { zipSync } = await import("fflate");
+        const entries = await Promise.all(
+          images.map(async (image, i) => [`${fileBase()}-page-${i + 1}.png`, new Uint8Array(await image.arrayBuffer())] as const),
+        );
+        // PNGs are already compressed, so store them as they are.
+        const zip = zipSync(Object.fromEntries(entries), { level: 0 });
+        saveFile(new Blob([zip.slice()], { type: "application/zip" }), `${fileBase()}-images.zip`);
+      }
+    } catch (e) {
+      console.error(e);
+      notify("Could not generate images");
     } finally {
       setBusy("");
     }
@@ -206,13 +236,41 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
       return next;
     });
 
-  const allOpen = q.sections.length > 0 && q.sections.every((s) => openSections.has(s.id));
+  const addParty = () => {
+    // A second sitting is usually on the same day at the same venue.
+    const next = createParty({ date: party.event.date, venue: party.event.venue, time: "" });
+    update((d) => {
+      d.parties.push(next);
+      for (const p of d.parties) {
+        if (d.costs.some((c) => c.partyId === p.id)) continue;
+        const at = d.costs.map((c) => !!c.partyId).lastIndexOf(true) + 1;
+        d.costs.splice(at, 0, { id: uid(), description: "Total Food Cost", remarks: "", amount: 0, partyId: p.id });
+      }
+    });
+    setActivePartyId(next.id);
+  };
 
-  const setSection = (si: number, fn: (s: Section) => void) => update((d) => fn(d.sections[si]));
+  const removeParty = () => {
+    const label = partyLabel(party, partyIndex);
+    if (!confirm(`Remove "${label}" with its menu and food cost?`)) return;
+    update((d) => {
+      d.parties.splice(partyIndex, 1);
+      d.costs = d.costs.filter((c) => c.partyId !== party.id);
+    });
+    setActivePartyId(q.parties[partyIndex === 0 ? 1 : partyIndex - 1].id);
+  };
+
+  const copyMenuFrom = (from: number) => {
+    const label = partyLabel(q.parties[from], from);
+    if (!confirm(`Replace the ${partyLabel(party, partyIndex)} menu with the ${label} menu?`)) return;
+    update((d) => { d.parties[partyIndex].sections = copySections(d.parties[from].sections); });
+  };
+
+  const setSection = (si: number, fn: (s: Section) => void) => update((d) => fn(d.parties[partyIndex].sections[si]));
 
   const addSection = () => {
     const id = uid();
-    update((d) => { d.sections.push({ id, title: "New section", columns: 1, items: [{ id: uid(), name: "", qty: "" }] }); });
+    update((d) => { d.parties[partyIndex].sections.push({ id, title: "New section", columns: 1, items: [{ id: uid(), name: "", qty: "" }] }); });
     setOpenSections((prev) => new Set(prev).add(id));
   };
 
@@ -226,16 +284,30 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
     setBulkText("");
   };
 
-  const subtotal = subtotalOf(q);
-  const tax = taxOf(q);
   const total = grandTotalOf(q);
+
+  const partyTabs = hasManyParties && (
+    <div className="flex flex-wrap gap-2 mb-4" aria-label="Parties">
+      {q.parties.map((p, i) => (
+        <button
+          key={p.id}
+          className={p.id === party.id ? primaryBtnCls : btnCls}
+          aria-pressed={p.id === party.id}
+          onClick={() => setActivePartyId(p.id)}
+        >
+          {partyLabel(p, i)}
+        </button>
+      ))}
+    </div>
+  );
 
   const previewLabel = busy === "preview" ? "Generating…" : "Preview";
   const downloadLabel = busy === "download" ? "Generating…" : "Download PDF";
+  const imagesLabel = busy === "images" ? "Generating…" : "Download Images";
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-gray-100 font-inter">
-      <header className="sticky top-0 z-30 bg-[#0a0a0a]/90 backdrop-blur-md border-b border-white/5">
+    <div className="min-h-screen bg-[#1a1346] text-gray-100 font-inter">
+      <header className="sticky top-0 z-30 bg-[#1a1346]/90 backdrop-blur-md border-b border-white/5">
         <div className="max-w-275 mx-auto px-2 md:px-8 py-2 md:py-3 flex items-center gap-2 md:gap-3">
           <button
             onClick={onBack}
@@ -247,38 +319,18 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
           </button>
           <div className="flex-1 min-w-0">
             <p className="font-playfair text-base md:text-lg text-primary truncate">
-              {mode === "template" ? "Default template" : `${q.number}${q.client.name ? " · " + q.client.name : ""}`}
+              {`${q.number}${q.client.name ? " · " + q.client.name : ""}`}
             </p>
             <p className="text-[11px] text-gray-500 truncate">{saved ? "All changes saved on this device" : "Saving…"}</p>
           </div>
           <div className="flex gap-2 shrink-0">
-            {/* {mode === "estimate" && (
-              <button
-                className={btnCls}
-                onClick={() => {
-                  saveTemplate(q);
-                  notify("Saved as default template for new estimates");
-                }}
-              >
-                Save as template
-              </button>
-            )} */}
-            {mode === "template" && (
-              <button
-                className={btnCls}
-                onClick={() => {
-                  if (!confirm("Reset the template to the original items? Your template edits will be lost.")) return;
-                  resetTemplate();
-                  setQ(buildDefaultTemplate());
-                }}
-              >
-                Reset
-              </button>
-            )}
             {/* Phones use the bottom action bar instead. */}
             <div className="hidden md:flex gap-2">
               <button className={btnCls} onClick={preview} disabled={!!busy}>
                 {previewLabel}
+              </button>
+              <button className={btnCls} onClick={downloadImages} disabled={!!busy}>
+                {imagesLabel}
               </button>
               <button className={primaryBtnCls} onClick={download} disabled={!!busy}>
                 {downloadLabel}
@@ -298,16 +350,12 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
             <Field label="Document title">
               <input className={inputCls} value={q.documentTitle} onChange={(e) => update((d) => { d.documentTitle = e.target.value; })} placeholder="Estimate / Quotation" />
             </Field>
-            {mode === "estimate" && (
-              <>
-                <Field label="Number">
-                  <input className={inputCls} value={q.number} onChange={(e) => update((d) => { d.number = e.target.value; })} />
-                </Field>
-                <Field label="Date">
-                  <input type="date" className={inputCls} value={q.date} onChange={(e) => update((d) => { d.date = e.target.value; })} />
-                </Field>
-              </>
-            )}
+            <Field label="Number">
+              <input className={inputCls} value={q.number} onChange={(e) => update((d) => { d.number = e.target.value; })} />
+            </Field>
+            <Field label="Date">
+              <input type="date" className={inputCls} value={q.date} onChange={(e) => update((d) => { d.date = e.target.value; })} />
+            </Field>
             <label className={`${checkboxLabel} sm:self-end`}>
               <input type="checkbox" className="accent-primary w-5 h-5" checked={q.showCover} onChange={(e) => update((d) => { d.showCover = e.target.checked; })} />
               Include cover page
@@ -315,66 +363,76 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
           </div>
         </Card>
 
-        {mode === "estimate" && (
-          <Card title="Client">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Name">
-                <input className={inputCls} value={q.client.name} autoComplete="off" onChange={(e) => update((d) => { d.client.name = e.target.value; })} placeholder="Mr. Faisal" />
-              </Field>
-              <Field label="Phone">
-                <input type="tel" inputMode="tel" className={inputCls} value={q.client.phone} onChange={(e) => update((d) => { d.client.phone = e.target.value; })} />
-              </Field>
-              <Field label="Address" className="sm:col-span-2">
-                <textarea rows={2} className={inputCls} value={q.client.address} onChange={(e) => update((d) => { d.client.address = e.target.value; })} />
-              </Field>
-            </div>
-          </Card>
-        )}
+        <Card title="Client">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Name">
+              <input className={inputCls} value={q.client.name} autoComplete="off" onChange={(e) => update((d) => { d.client.name = e.target.value; })} placeholder="Mr. Faisal" />
+            </Field>
+            <Field label="Phone">
+              <input type="tel" inputMode="tel" className={inputCls} value={q.client.phone} onChange={(e) => update((d) => { d.client.phone = e.target.value; })} />
+            </Field>
+            <Field label="Address" className="sm:col-span-2">
+              <textarea rows={2} className={inputCls} value={q.client.address} onChange={(e) => update((d) => { d.client.address = e.target.value; })} />
+            </Field>
+          </div>
+        </Card>
 
-        <Card title="Event details">
+        <Card title="Event details" actions={<button className={btnCls} onClick={addParty}>+ Add party</button>}>
+          {partyTabs}
+          {hasManyParties && (
+            <div className="flex items-end gap-2 mb-4">
+              <Field label="Party name" className="flex-1 min-w-0">
+                <input className={inputCls} value={party.name} onChange={(e) => update((d) => { d.parties[partyIndex].name = e.target.value; })} placeholder="Night / Convention" />
+              </Field>
+              <button className={`${btnCls} shrink-0 hover:border-red-500! hover:text-red-400!`} onClick={removeParty}>Remove party</button>
+            </div>
+          )}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <Field label="Date">
-              <input type="date" className={inputCls} value={q.event.date} onChange={(e) => update((d) => { d.event.date = e.target.value; })} />
+              <input type="date" className={inputCls} value={party.event.date} onChange={(e) => update((d) => { d.parties[partyIndex].event.date = e.target.value; })} />
             </Field>
             <Field label="No. of pax">
-              <input inputMode="numeric" className={inputCls} value={q.event.pax} onChange={(e) => update((d) => { d.event.pax = e.target.value; })} placeholder="1000" />
+              <input inputMode="numeric" className={inputCls} value={party.event.pax} onChange={(e) => update((d) => { d.parties[partyIndex].event.pax = e.target.value; })} placeholder="1000" />
             </Field>
             <Field label="Venue" className="col-span-2 lg:col-span-1 lg:order-first">
-              <input className={inputCls} value={q.event.venue} onChange={(e) => update((d) => { d.event.venue = e.target.value; })} />
+              <input className={inputCls} value={party.event.venue} onChange={(e) => update((d) => { d.parties[partyIndex].event.venue = e.target.value; })} />
             </Field>
             <Field label="Time">
-              <input className={inputCls} value={q.event.time} onChange={(e) => update((d) => { d.event.time = e.target.value; })} placeholder="Lunch / Dinner" />
+              <input className={inputCls} value={party.event.time} onChange={(e) => update((d) => { d.parties[partyIndex].event.time = e.target.value; })} placeholder="Lunch / Dinner" />
             </Field>
             <Field label="Nature">
-              <input className={inputCls} value={q.event.nature} onChange={(e) => update((d) => { d.event.nature = e.target.value; })} placeholder="Nikah / Reception" />
+              <input className={inputCls} value={party.event.nature} onChange={(e) => update((d) => { d.parties[partyIndex].event.nature = e.target.value; })} placeholder="Nikah / Reception" />
             </Field>
           </div>
         </Card>
 
         <Card
-          title="Menu & items"
-          actions={
-            <>
-              {q.sections.length > 0 && (
-                <button
-                  className={btnCls}
-                  onClick={() => setOpenSections(allOpen ? new Set() : new Set(q.sections.map((s) => s.id)))}
-                >
-                  {allOpen ? "Collapse all" : "Expand all"}
-                </button>
-              )}
-              <button className={btnCls} onClick={addSection}>+ Section</button>
-            </>
-          }
+          title={hasManyParties ? `Menu: ${partyLabel(party, partyIndex)}` : "Menu & items"}
+          actions={<button className={btnCls} onClick={addSection}>+ Section</button>}
         >
+          {partyTabs}
           <Field label="Menu page heading" className="mb-4 md:mb-6">
             <input className={inputCls} value={q.menuTitle} onChange={(e) => update((d) => { d.menuTitle = e.target.value; })} />
           </Field>
+          {hasManyParties && (
+            <Field label="Copy menu from" className="mb-4 md:mb-6">
+              <select
+                className={inputCls}
+                value=""
+                onChange={(e) => { if (e.target.value) copyMenuFrom(Number(e.target.value)); }}
+              >
+                <option value="">Choose a party</option>
+                {q.parties.map((p, i) => (i === partyIndex ? null : <option key={p.id} value={i}>{partyLabel(p, i)}</option>))}
+              </select>
+            </Field>
+          )}
 
           <div className="space-y-3 md:space-y-4">
-            {q.sections.map((sec, si) => {
+            {party.sections.map((sec, si) => {
               const isOpen = openSections.has(sec.id);
               const count = sec.items.filter((i) => i.name.trim()).length;
+              const optionalItems = optionalItemsFor(sec.title);
+              const addedNames = new Set(sec.items.map((i) => i.name.trim().toLowerCase()));
               return (
                 <div key={sec.id} className="border border-[#2a2a2a] bg-[#101010]">
                   <div className="flex items-center gap-1 pr-1.5">
@@ -392,13 +450,13 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
                     <RowMenu
                       label={sec.title || "Section"}
                       actions={[
-                        { label: "Move section up", disabled: si === 0, onClick: () => update((d) => move(d.sections, si, si - 1)) },
-                        { label: "Move section down", disabled: si === q.sections.length - 1, onClick: () => update((d) => move(d.sections, si, si + 1)) },
+                        { label: "Move section up", disabled: si === 0, onClick: () => update((d) => move(d.parties[partyIndex].sections, si, si - 1)) },
+                        { label: "Move section down", disabled: si === party.sections.length - 1, onClick: () => update((d) => move(d.parties[partyIndex].sections, si, si + 1)) },
                         {
                           label: "Delete section",
                           danger: true,
                           onClick: () => {
-                            if (confirm(`Delete section "${sec.title}"?`)) update((d) => { d.sections.splice(si, 1); });
+                            if (confirm(`Delete section "${sec.title}"?`)) update((d) => { d.parties[partyIndex].sections.splice(si, 1); });
                           },
                         },
                       ]}
@@ -407,25 +465,13 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
 
                   {isOpen && (
                     <div className="border-t border-[#2a2a2a] p-3 space-y-3">
-                      <div className="grid grid-cols-[1fr_auto] gap-2">
-                        <Field label="Section title">
-                          <input
-                            className={`${inputCls} font-playfair text-primary`}
-                            value={sec.title}
-                            onChange={(e) => setSection(si, (s) => { s.title = e.target.value; })}
-                          />
-                        </Field>
-                        <Field label="PDF layout">
-                          <select
-                            className={`${inputCls} w-auto`}
-                            value={sec.columns}
-                            onChange={(e) => setSection(si, (s) => { s.columns = Number(e.target.value) as 1 | 2; })}
-                          >
-                            <option value={1}>1 column</option>
-                            <option value={2}>2 columns</option>
-                          </select>
-                        </Field>
-                      </div>
+                      <Field label="Section title">
+                        <input
+                          className={`${inputCls} font-playfair text-primary`}
+                          value={sec.title}
+                          onChange={(e) => setSection(si, (s) => { s.title = e.target.value; })}
+                        />
+                      </Field>
 
                       {sec.items.length > 0 && (
                         <div className="hidden md:grid grid-cols-[1fr_8rem_2rem] gap-2 text-[11px] uppercase tracking-wider text-gray-500 px-1 pt-1">
@@ -470,6 +516,29 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
                           </div>
                         ))}
                       </div>
+
+                      {optionalItems.length > 0 && (
+                        <details className="pt-1">
+                          <summary className={`${btnCls} w-fit cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
+                            Optional items ({optionalItems.length})
+                          </summary>
+                          <div className="flex flex-wrap gap-2 pt-3">
+                            {optionalItems.map((name) => {
+                              const added = addedNames.has(name.toLowerCase());
+                              return (
+                                <button
+                                  key={name}
+                                  className={btnCls}
+                                  disabled={added}
+                                  onClick={() => setSection(si, (s) => { s.items.push({ id: uid(), name, qty: "" }); })}
+                                >
+                                  {added ? `✓ ${name}` : `+ ${name}`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      )}
 
                       {bulkFor === sec.id ? (
                         <div className="pt-1 space-y-2">
@@ -516,11 +585,15 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
             <span />
           </div>
           <div className="divide-y divide-[#222] md:divide-y-0 md:space-y-2">
-            {q.costs.map((c, ci) => (
+            {q.costs.map((c, ci) => {
+              // A party's food cost row follows the party, so it is named and removed with it.
+              const isPartyRow = hasManyParties && !!c.partyId;
+              return (
               <div key={c.id} className="grid grid-cols-[1fr_auto] md:grid-cols-[1fr_1fr_9rem_2rem] gap-2 py-3 first:pt-0 md:py-0">
                 <input
-                  className={`${inputCls} col-span-2 md:col-span-1`}
-                  value={c.description}
+                  className={`${inputCls} col-span-2 md:col-span-1 read-only:text-gray-400`}
+                  value={costLabel(q, c)}
+                  readOnly={isPartyRow}
                   placeholder="Description"
                   aria-label="Description"
                   onChange={(e) => update((d) => { d.costs[ci].description = e.target.value; })}
@@ -544,43 +617,21 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
                   onChange={(e) => update((d) => { d.costs[ci].amount = Number(e.target.value) || 0; })}
                 />
                 <RowMenu
-                  label={c.description || "Row"}
+                  label={costLabel(q, c) || "Row"}
                   actions={[
                     { label: "Move up", disabled: ci === 0, onClick: () => update((d) => move(d.costs, ci, ci - 1)) },
                     { label: "Move down", disabled: ci === q.costs.length - 1, onClick: () => update((d) => move(d.costs, ci, ci + 1)) },
-                    { label: "Delete", danger: true, onClick: () => update((d) => { d.costs.splice(ci, 1); }) },
+                    { label: "Delete", danger: true, disabled: isPartyRow, onClick: () => update((d) => { d.costs.splice(ci, 1); }) },
                   ]}
                 />
               </div>
-            ))}
+              );
+            })}
           </div>
 
-          <div className="mt-5 md:mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-start">
-            <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-              <Field label="GST %">
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="any"
-                  className={`${inputCls} w-24`}
-                  value={q.taxPercent}
-                  onChange={(e) => update((d) => { d.taxPercent = Number(e.target.value) || 0; })}
-                />
-              </Field>
-              <label className={checkboxLabel}>
-                <input type="checkbox" className="accent-primary w-5 h-5 shrink-0" checked={q.addTaxToTotal} onChange={(e) => update((d) => { d.addTaxToTotal = e.target.checked; })} />
-                Add GST to total (otherwise shown as a note)
-              </label>
-            </div>
-            <div className="bg-[#0a0a0a] border border-[#333] p-4 text-sm space-y-1.5">
-              <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>₹ {formatINR(subtotal)}</span></div>
-              {q.addTaxToTotal && q.taxPercent > 0 && (
-                <div className="flex justify-between text-gray-400"><span>GST ({q.taxPercent}%)</span><span>₹ {formatINR(tax)}</span></div>
-              )}
-              <div className="flex justify-between text-lg font-playfair text-primary pt-2 border-t border-[#333]"><span>Total</span><span>₹ {formatINR(total)}</span></div>
-              <p className="text-xs text-gray-500 text-right">{amountInWords(total)}</p>
-            </div>
+          <div className="mt-5 md:mt-6 md:ml-auto md:w-1/2 bg-[#0a0a0a] border border-[#333] p-4 text-sm space-y-1.5">
+            <div className="flex justify-between text-lg font-playfair text-primary"><span>Total</span><span>₹ {formatINR(total)}</span></div>
+            <p className="text-xs text-gray-500 text-right">{amountInWords(total)}</p>
           </div>
         </Card>
 
@@ -592,8 +643,11 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
             <Field label="Payment terms">
               <textarea rows={5} className={inputCls} value={q.paymentTerms} onChange={(e) => update((d) => { d.paymentTerms = e.target.value; })} />
             </Field>
-            <Field label="Rate revision note">
+            <Field label="Terms & conditions">
               <textarea rows={4} className={inputCls} value={q.terms} onChange={(e) => update((d) => { d.terms = e.target.value; })} />
+            </Field>
+            <Field label="Waste management terms">
+              <textarea rows={2} className={inputCls} value={q.wasteTerms} onChange={(e) => update((d) => { d.wasteTerms = e.target.value; })} />
             </Field>
           </div>
         </Card>
@@ -633,7 +687,7 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
       </main>
 
       {/* Phone action bar: total and PDF actions always within thumb reach. */}
-      <div className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-[#0a0a0a]/95 backdrop-blur-md border-t border-white/10 px-3 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)]">
+      <div className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-[#1a1346]/95 backdrop-blur-md border-t border-white/10 px-3 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)]">
         <div className="flex items-center gap-2">
           <div className="flex-1 min-w-0">
             <p className="text-[10px] uppercase tracking-wider text-gray-500">Total</p>
@@ -642,8 +696,11 @@ export default function EstimateEditor({ initial, mode, onBack }: Props) {
           <button className={btnCls} onClick={preview} disabled={!!busy}>
             {previewLabel}
           </button>
+          <button className={btnCls} onClick={downloadImages} disabled={!!busy}>
+            {busy === "images" ? "Generating…" : "Images"}
+          </button>
           <button className={primaryBtnCls} onClick={download} disabled={!!busy}>
-            {busy === "download" ? "Generating…" : "Download"}
+            {busy === "download" ? "Generating…" : "PDF"}
           </button>
         </div>
       </div>
