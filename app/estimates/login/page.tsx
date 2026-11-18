@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function EstimatesLoginPage() {
   return (
-    <main className="min-h-screen bg-[#1a1346] text-gray-100 font-inter flex items-center justify-center px-4 py-10">
+    <main className="min-h-screen bg-[#0a0a0a] text-gray-100 font-inter flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm bg-[#141414] border border-[#333] p-6">
         <div className="relative h-20 w-28 mx-auto mb-4">
           <Image src="/images/adco-logo.png" alt="Adco Caterers" className="object-contain" fill />

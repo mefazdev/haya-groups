@@ -1,4 +1,5 @@
 import type { Estimate, EventDetails, Party, Section } from "./types";
+import { DISH_CATEGORIES } from "./dishes";
 import { uid } from "./utils";
 
 const section = (title: string, items: string[], columns: 1 | 2 = 1): Section => ({
@@ -8,7 +9,25 @@ const section = (title: string, items: string[], columns: 1 | 2 = 1): Section =>
   items: items.map((name) => ({ id: uid(), name, qty: "" })),
 });
 
-// Not every client needs these, so they stay out of new estimates until picked in the editor.
+const SERVICE_UTENSILS_TITLE = "Service Utensils";
+
+// Shown first in the section. Nothing is ticked until staff choose it.
+const MAIN_SERVICE_UTENSILS = [
+  "Live Juice Counter",
+  "Quality Juice Glass",
+  "Live Tea Counter",
+  "Islamic Buffet",
+  "Dessert Settings",
+  "Dishes",
+  "Salad Bowl",
+  "Ceramic Plates",
+  "Service Boys",
+  "Hosting Boys",
+  "Hosting Girls",
+  "All Accessories for Serving",
+];
+
+// Less common items, listed separately.
 const OPTIONAL_SERVICE_UTENSILS = [
   "Metal Counter LaCasa",
   "Back Drop Antique",
@@ -65,72 +84,50 @@ const OPTIONAL_SERVICE_UTENSILS = [
   "Tea Maker",
 ];
 
-export const optionalItemsFor = (sectionTitle: string): string[] =>
-  sectionTitle.trim().toLowerCase() === "service utensils" ? OPTIONAL_SERVICE_UTENSILS : [];
+const normalize = (text: string) => text.trim().toLowerCase();
 
+const alphabetical = (items: string[]) =>
+  [...new Set(items)].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base", numeric: true }));
+
+// The tick-box choices offered for a section, matched by its title.
+export const choicesFor = (sectionTitle: string): string[] => {
+  const title = normalize(sectionTitle);
+  if (title === normalize(SERVICE_UTENSILS_TITLE)) return alphabetical(MAIN_SERVICE_UTENSILS);
+  return alphabetical(DISH_CATEGORIES.find((c) => normalize(c.title) === title)?.dishes ?? []);
+};
+
+// Less common choices, kept out of sight until staff ask for the full list.
+export const moreChoicesFor = (sectionTitle: string): string[] => {
+  if (normalize(sectionTitle) !== normalize(SERVICE_UTENSILS_TITLE)) return [];
+  const main = new Set(MAIN_SERVICE_UTENSILS.map(normalize));
+  return alphabetical(OPTIONAL_SERVICE_UTENSILS.filter((name) => !main.has(normalize(name))));
+};
+
+// Everything starts unticked so staff only pick what this client ordered.
 const buildDefaultSections = (): Section[] => [
-  section("Welcome Refreshments (Live)", [
-    "Assorted Fresh Juice (Pineapple, Watermelon, Mint)",
-  ]),
-  section("Starters & Soups", [
-    "Chicken Nuggets",
-    "Veg Cheese Ball",
-  ]),
-  section("Salad & Accompaniments", [
-    "Hawaiian Chicken Salad",
-    "Greek Salad",
-    "Golden Purple Salad",
-    "Aloo Chana Chaat",
-    "2 Types Pickle",
-  ]),
-  section("Bread (Live)", [
-    "Coin Porotta",
-    "Appam",
-    "Live Puttu (3 Varieties, Kadala Curry)",
-    "Live Dosa Counter (Ghee Roast, Thattu Dosa, Uthappam, Sambar & Chutney)",
-  ]),
-  section("Main Course", [
-    "Malabar Dum Biriyani",
-    "Fried Rice / Zafrani Pulao",
-    "Chicken Vella Kuruma",
-    "Signature Chicken Fry",
-    "Paneer Butter Masala",
-    "Kariveppila Cauliflower",
-    "Kadai Vegetable",
-  ]),
-  section("Desserts", [
-    "Pudding (Choco Moco, Tender Coconut)",
-    "Carrot Halwa With Ice Cream",
-    "Ghee Pak",
-  ]),
-  section("Beverages", [
-    "Samovar Tea (Live)",
-    "Bottled Drinking Water",
-  ]),
-  section(
-    "Service Utensils",
-    [
-      "Live Juice Counter",
-      "Quality Juice Glass",
-      "Live Tea Counter",
-      "Islamic Buffet",
-      "Dessert Settings",
-      "Dishes",
-      "Salad Bowl",
-      "Ceramic Plates",
-      "Service Boys",
-      "Hosting Boys",
-      "Hosting Girls",
-      "All Accessories for Serving",
-    ],
-    2,
-  ),
+  ...DISH_CATEGORIES.map((c) => section(c.title, [])),
+  section(SERVICE_UTENSILS_TITLE, [], 2),
 ];
+
+export interface MenuChoice {
+  section: string;
+  name: string;
+}
+
+// Finds choices across every section. Each typed word can match anywhere in the name.
+export const searchChoices = (query: string): MenuChoice[] => {
+  const words = normalize(query).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  return [...DISH_CATEGORIES.map((c) => c.title), SERVICE_UTENSILS_TITLE]
+    .flatMap((section) => [...choicesFor(section), ...moreChoicesFor(section)].map((name) => ({ section, name })))
+    .filter(({ name }) => words.every((word) => name.toLowerCase().includes(word)))
+    .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base", numeric: true }));
+};
 
 export const createParty = (event: Partial<EventDetails> = {}): Party => ({
   id: uid(),
   name: "",
-  event: { date: "", venue: "", pax: "", time: "Lunch", nature: "", ...event },
+  event: { date: "", venue: "", pax: "", time: "", nature: "", ...event },
   sections: buildDefaultSections(),
 });
 

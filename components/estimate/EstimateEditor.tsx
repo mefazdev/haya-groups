@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, ReactNode } from "react";
-import type { LineItem, Estimate, Section } from "@/lib/estimate/types";
-import { amountInWords, copySections, costLabel, formatINR, grandTotalOf, partyLabel, uid } from "@/lib/estimate/utils";
+import { FormEvent, useEffect, useRef, useState, ReactNode } from "react";
+import type { Estimate, Section } from "@/lib/estimate/types";
+import { amountInWords, costLabel, formatINR, grandTotalOf, partyLabel, uid } from "@/lib/estimate/utils";
 import { saveEstimate } from "@/lib/estimate/storage";
-import { createParty, optionalItemsFor } from "@/lib/estimate/defaults";
+import { choicesFor, createParty, moreChoicesFor, searchChoices } from "@/lib/estimate/defaults";
 
 // Mobile first: 16px text so iOS doesn't zoom on focus, 44px tap targets; denser from md up.
 const inputCls =
@@ -93,16 +93,43 @@ const move = <T,>(arr: T[], from: number, to: number) => {
   arr.splice(to, 0, x);
 };
 
-// "Chicken Fry – 120 Kg" / "Chicken Fry - 120 Kg" / "Chicken Fry, 120 Kg" / "Chicken Fry"
-const parseBulk = (text: string): LineItem[] =>
-  text
-    .split("\n")
-    .map((l) => l.replace(/^\s*[•\-*·]\s*/, "").trim())
-    .filter(Boolean)
-    .map((line) => {
-      const m = line.match(/^(.*?)\s+[–—-]\s+([^–—-]+)$/) ?? line.match(/^(.*?)\s*\t\s*(.+)$/);
-      return { id: uid(), name: (m ? m[1] : line).trim(), qty: m ? m[2].trim() : "" };
-    });
+const STEPS = ["Details", "Menu", "Price", "Send"];
+
+// Computer share menus usually leave out WhatsApp, so sending is for touch devices.
+const canSendFiles = () =>
+  window.matchMedia("(pointer: coarse)").matches &&
+  !!navigator.canShare?.({ files: [new File(["x"], "estimate.pdf", { type: "application/pdf" })] });
+
+const sameDish = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+const toggleItem = (section: Section, name: string) => {
+  const remaining = section.items.filter((it) => !sameDish(it.name, name));
+  if (remaining.length === section.items.length) section.items.push({ id: uid(), name, qty: "" });
+  else section.items = remaining;
+};
+
+function AddDish({ onAdd }: { onAdd: (name: string) => void }) {
+  const [name, setName] = useState("");
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onAdd(name.trim());
+    setName("");
+  };
+  return (
+    <form className="flex gap-2" onSubmit={submit}>
+      <input
+        className={inputCls}
+        value={name}
+        placeholder="Add a new dish for this client"
+        aria-label="Add a new dish"
+        enterKeyHint="done"
+        onChange={(e) => setName(e.target.value)}
+      />
+      <button type="submit" className={`${btnCls} shrink-0`}>Add</button>
+    </form>
+  );
+}
 
 interface Props {
   initial: Estimate;
@@ -114,12 +141,19 @@ export default function EstimateEditor({ initial, onBack }: Props) {
   const [saved, setSaved] = useState(true);
   const [busy, setBusy] = useState<"" | "preview" | "download" | "images">("");
   const [previewUrl, setPreviewUrl] = useState("");
-  const [bulkFor, setBulkFor] = useState<string | null>(null);
-  const [bulkText, setBulkText] = useState("");
   const [flash, setFlash] = useState("");
-  // Menu sections start collapsed to keep the page short.
-  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set());
+  const [activeSectionId, setActiveSectionId] = useState("");
+  const [newSectionId, setNewSectionId] = useState("");
+  const categoryRowRef = useRef<HTMLDivElement>(null);
   const [activePartyId, setActivePartyId] = useState(initial.parties[0].id);
+  const [step, setStep] = useState(0);
+  const [dishSearch, setDishSearch] = useState("");
+  const [nameMissing, setNameMissing] = useState(false);
+  const [canSend] = useState(canSendFiles);
+  // Files are prepared ahead because browsers only allow sharing right after a tap.
+  const [preparedPdf, setPreparedPdf] = useState<{ source: Estimate; blob: Blob | null } | null>(null);
+  const [preparedImages, setPreparedImages] = useState<{ source: Estimate; images: Blob[] | null } | null>(null);
+  const clientNameRef = useRef<HTMLInputElement>(null);
   const firstRender = useRef(true);
   const partyIndex = Math.max(0, q.parties.findIndex((p) => p.id === activePartyId));
   const party = q.parties[partyIndex];
@@ -155,7 +189,58 @@ export default function EstimateEditor({ initial, onBack }: Props) {
     setTimeout(() => setFlash(""), 2500);
   };
 
+  useEffect(() => {
+    if (step !== STEPS.length - 1) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      let blob: Blob | null = null;
+      try {
+        const { renderEstimatePdf } = await import("./EstimatePDF");
+        blob = await renderEstimatePdf(q);
+      } catch (e) {
+        console.error(e);
+      }
+      if (cancelled) return;
+      setPreparedPdf({ source: q, blob });
+      if (!canSend) return;
+
+      let images: Blob[] | null = null;
+      try {
+        const { renderEstimateImages } = await import("./EstimatePDF");
+        images = await renderEstimateImages(q, blob ?? undefined);
+      } catch (e) {
+        console.error(e);
+      }
+      if (!cancelled) setPreparedImages({ source: q, images });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [step, q, canSend]);
+
+  const readyPdf = preparedPdf?.source === q ? preparedPdf.blob : null;
+  const preparingPdf = step === STEPS.length - 1 && preparedPdf?.source !== q;
+  const readyImages = preparedImages?.source === q ? preparedImages.images : null;
+  const preparingImages = canSend && step === STEPS.length - 1 && preparedImages?.source !== q;
+  const actionsDisabled = !!busy || preparingPdf;
+  const showNameError = nameMissing && !q.client.name.trim();
+
+  const goToStep = (target: number) => {
+    if (target > 0 && !q.client.name.trim()) {
+      setNameMissing(true);
+      setStep(0);
+      // The field only exists yet when already on this step.
+      if (clientNameRef.current) clientNameRef.current.focus();
+      else setTimeout(() => clientNameRef.current?.focus(), 0);
+      return;
+    }
+    setStep(target);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  };
+
   const buildPdf = async () => {
+    if (readyPdf) return readyPdf;
     const { renderEstimatePdf } = await import("./EstimatePDF");
     return renderEstimatePdf(q);
   };
@@ -203,11 +288,29 @@ export default function EstimateEditor({ initial, onBack }: Props) {
     }
   };
 
+  const sendFiles = async (files: File[]) => {
+    try {
+      await navigator.share({ files, title: `${q.documentTitle} ${q.number}` });
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") notify("Could not open sharing");
+    }
+  };
+
+  const sendPdf = () => {
+    if (!readyPdf) return notify("Could not generate PDF");
+    return sendFiles([new File([readyPdf], `${fileBase()}.pdf`, { type: "application/pdf" })]);
+  };
+
+  const sendImages = () => {
+    if (!readyImages) return notify("Could not generate images");
+    return sendFiles(readyImages.map((image, i) => new File([image], `${fileBase()}-page-${i + 1}.png`, { type: "image/png" })));
+  };
+
   const downloadImages = async () => {
     setBusy("images");
     try {
       const { renderEstimateImages } = await import("./EstimatePDF");
-      const images = await renderEstimateImages(q);
+      const images = readyImages ?? (await renderEstimateImages(q, readyPdf ?? undefined));
       if (images.length === 1) {
         saveFile(images[0], `${fileBase()}.png`);
       } else {
@@ -228,17 +331,9 @@ export default function EstimateEditor({ initial, onBack }: Props) {
     }
   };
 
-  const toggleSection = (id: string) =>
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
   const addParty = () => {
     // A second sitting is usually on the same day at the same venue.
-    const next = createParty({ date: party.event.date, venue: party.event.venue, time: "" });
+    const next = createParty({ date: party.event.date, venue: party.event.venue });
     update((d) => {
       d.parties.push(next);
       for (const p of d.parties) {
@@ -260,34 +355,43 @@ export default function EstimateEditor({ initial, onBack }: Props) {
     setActivePartyId(q.parties[partyIndex === 0 ? 1 : partyIndex - 1].id);
   };
 
-  const copyMenuFrom = (from: number) => {
-    const label = partyLabel(q.parties[from], from);
-    if (!confirm(`Replace the ${partyLabel(party, partyIndex)} menu with the ${label} menu?`)) return;
-    update((d) => { d.parties[partyIndex].sections = copySections(d.parties[from].sections); });
-  };
-
   const setSection = (si: number, fn: (s: Section) => void) => update((d) => fn(d.parties[partyIndex].sections[si]));
 
   const addSection = () => {
     const id = uid();
-    update((d) => { d.parties[partyIndex].sections.push({ id, title: "New section", columns: 1, items: [{ id: uid(), name: "", qty: "" }] }); });
-    setOpenSections((prev) => new Set(prev).add(id));
+    update((d) => { d.parties[partyIndex].sections.push({ id, title: "New category", columns: 1, items: [] }); });
+    setActiveSectionId(id);
+    setNewSectionId(id);
+    setDishSearch("");
+    window.scrollTo({ top: 0, behavior: "instant" });
+    // Wait for the new button to exist so the row can reveal it.
+    setTimeout(() => categoryRowRef.current?.scrollTo({ left: categoryRowRef.current.scrollWidth }), 0);
   };
 
-  const addItem = (si: number, at?: number) =>
-    setSection(si, (s) => s.items.splice(at ?? s.items.length, 0, { id: uid(), name: "", qty: "" }));
+  const addDish = (si: number, name: string) =>
+    setSection(si, (s) => {
+      if (!s.items.some((it) => sameDish(it.name, name))) s.items.push({ id: uid(), name, qty: "" });
+    });
 
-  const applyBulk = (si: number) => {
-    const items = parseBulk(bulkText);
-    if (items.length) setSection(si, (s) => s.items.push(...items));
-    setBulkFor(null);
-    setBulkText("");
-  };
+  const toggleDish = (si: number, name: string) =>
+    setSection(si, (s) => toggleItem(s, name));
+
+  // Older estimates may not have this section yet, so it is created on first use.
+  const toggleSearchResult = (sectionTitle: string, name: string) =>
+    update((d) => {
+      const sections = d.parties[partyIndex].sections;
+      let section = sections.find((s) => sameDish(s.title, sectionTitle));
+      if (!section) {
+        section = { id: uid(), title: sectionTitle, columns: 1, items: [] };
+        sections.push(section);
+      }
+      toggleItem(section, name);
+    });
 
   const total = grandTotalOf(q);
 
   const partyTabs = hasManyParties && (
-    <div className="flex flex-wrap gap-2 mb-4" aria-label="Parties">
+    <div className="flex flex-wrap gap-2 mb-4" aria-label="Functions">
       {q.parties.map((p, i) => (
         <button
           key={p.id}
@@ -301,13 +405,30 @@ export default function EstimateEditor({ initial, onBack }: Props) {
     </div>
   );
 
+  const selectedCount = party.sections.flatMap((s) => s.items).filter((it) => it.name.trim()).length;
+  const stepSummary =
+    step === 0 ? "" : step === 1 ? `${selectedCount} item${selectedCount === 1 ? "" : "s"} selected` : `₹ ${formatINR(total)}`;
+
+  const activeSection = party.sections.find((s) => s.id === activeSectionId) ?? party.sections[0];
+  const namedItemCount = (section: Section) => section.items.filter((it) => it.name.trim()).length;
+
+  const openCategory = (id: string, button: HTMLElement) => {
+    setActiveSectionId(id);
+    setDishSearch("");
+    button.scrollIntoView({ inline: "center", block: "nearest" });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  };
+
+  const isSearching = !!dishSearch.trim();
+  const searchResults = searchChoices(dishSearch);
+
   const previewLabel = busy === "preview" ? "Generating…" : "Preview";
   const downloadLabel = busy === "download" ? "Generating…" : "Download PDF";
   const imagesLabel = busy === "images" ? "Generating…" : "Download Images";
 
   return (
-    <div className="min-h-screen bg-[#1a1346] text-gray-100 font-inter">
-      <header className="sticky top-0 z-30 bg-[#1a1346]/90 backdrop-blur-md border-b border-white/5">
+    <div className="min-h-screen bg-[#0a0a0a] text-gray-100 font-inter">
+      <header className="sticky top-0 z-30 bg-[#0a0a0a]/90 backdrop-blur-md border-b border-white/5">
         <div className="max-w-275 mx-auto px-2 md:px-8 py-2 md:py-3 flex items-center gap-2 md:gap-3">
           <button
             onClick={onBack}
@@ -323,51 +444,74 @@ export default function EstimateEditor({ initial, onBack }: Props) {
             </p>
             <p className="text-[11px] text-gray-500 truncate">{saved ? "All changes saved on this device" : "Saving…"}</p>
           </div>
-          <div className="flex gap-2 shrink-0">
-            {/* Phones use the bottom action bar instead. */}
-            <div className="hidden md:flex gap-2">
-              <button className={btnCls} onClick={preview} disabled={!!busy}>
-                {previewLabel}
-              </button>
-              <button className={btnCls} onClick={downloadImages} disabled={!!busy}>
-                {imagesLabel}
-              </button>
-              <button className={primaryBtnCls} onClick={download} disabled={!!busy}>
-                {downloadLabel}
-              </button>
-            </div>
-          </div>
         </div>
+        <nav aria-label="Steps" className="max-w-275 mx-auto px-2 md:px-8 pb-2 grid grid-cols-4 gap-1">
+          {STEPS.map((label, i) => (
+            <button
+              key={label}
+              aria-current={i === step ? "step" : undefined}
+              onClick={() => goToStep(i)}
+              className={`min-h-11 border-b-2 text-xs uppercase tracking-wider transition-colors ${i === step ? "border-primary text-primary" : i < step ? "border-primary/40 text-gray-300" : "border-[#333] text-gray-500"}`}
+            >
+              {i + 1}. {label}
+            </button>
+          ))}
+        </nav>
+        {step === 1 && (
+          <div
+            ref={categoryRowRef}
+            role="group"
+            aria-label="Menu categories"
+            className="max-w-275 mx-auto px-2 md:px-8 pb-2 flex md:flex-wrap gap-2 overflow-x-auto [scrollbar-width:none]"
+          >
+            {party.sections.map((sec) => {
+              const active = sec.id === activeSection?.id && !isSearching;
+              const count = namedItemCount(sec);
+              return (
+                <button
+                  key={sec.id}
+                  aria-pressed={active}
+                  onClick={(e) => openCategory(sec.id, e.currentTarget)}
+                  className={`shrink-0 min-h-11 md:min-h-9 px-3 border text-sm whitespace-nowrap transition-colors ${active ? "bg-primary border-primary text-[#050505] font-medium" : count > 0 ? "border-primary text-primary" : "border-[#333] text-gray-300"}`}
+                >
+                  {sec.title || "Untitled category"}
+                  {count > 0 && <span className="ml-1.5 font-semibold">{count}</span>}
+                </button>
+              );
+            })}
+            <button
+              onClick={addSection}
+              className="shrink-0 min-h-11 md:min-h-9 px-3 border border-dashed border-primary text-sm text-primary whitespace-nowrap hover:bg-primary/10 transition-colors"
+            >
+              + Category
+            </button>
+          </div>
+        )}
       </header>
 
       {flash && (
-        <div className="fixed bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 z-50 bg-primary text-[#050505] text-sm px-4 py-2 shadow-lg">{flash}</div>
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-primary text-[#050505] text-sm px-4 py-2 shadow-lg">{flash}</div>
       )}
 
-      <main className="max-w-275 mx-auto px-3 md:px-8 pt-4 md:pt-8 pb-32 md:pb-12 space-y-4 md:space-y-6">
-        <Card title="Document">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Field label="Document title">
-              <input className={inputCls} value={q.documentTitle} onChange={(e) => update((d) => { d.documentTitle = e.target.value; })} placeholder="Estimate / Quotation" />
-            </Field>
-            <Field label="Number">
-              <input className={inputCls} value={q.number} onChange={(e) => update((d) => { d.number = e.target.value; })} />
-            </Field>
-            <Field label="Date">
-              <input type="date" className={inputCls} value={q.date} onChange={(e) => update((d) => { d.date = e.target.value; })} />
-            </Field>
-            <label className={`${checkboxLabel} sm:self-end`}>
-              <input type="checkbox" className="accent-primary w-5 h-5" checked={q.showCover} onChange={(e) => update((d) => { d.showCover = e.target.checked; })} />
-              Include cover page
-            </label>
-          </div>
-        </Card>
-
+      <main className="max-w-275 mx-auto px-3 md:px-8 pt-4 md:pt-8 pb-32 space-y-4 md:space-y-6">
+        {step === 0 && (
+          <>
         <Card title="Client">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Name">
-              <input className={inputCls} value={q.client.name} autoComplete="off" onChange={(e) => update((d) => { d.client.name = e.target.value; })} placeholder="Mr. Faisal" />
-            </Field>
+            <div>
+              <Field label="Name">
+                <input
+                  ref={clientNameRef}
+                  className={inputCls}
+                  value={q.client.name}
+                  autoComplete="off"
+                  aria-invalid={showNameError}
+                  onChange={(e) => update((d) => { d.client.name = e.target.value; })}
+                  placeholder="Mr. Faisal"
+                />
+              </Field>
+              {showNameError && <p role="alert" className="mt-1.5 text-sm text-red-300">Enter the client name to continue.</p>}
+            </div>
             <Field label="Phone">
               <input type="tel" inputMode="tel" className={inputCls} value={q.client.phone} onChange={(e) => update((d) => { d.client.phone = e.target.value; })} />
             </Field>
@@ -377,14 +521,14 @@ export default function EstimateEditor({ initial, onBack }: Props) {
           </div>
         </Card>
 
-        <Card title="Event details" actions={<button className={btnCls} onClick={addParty}>+ Add party</button>}>
+        <Card title="Event details" actions={<button className={btnCls} onClick={addParty}>+ Add function</button>}>
           {partyTabs}
           {hasManyParties && (
             <div className="flex items-end gap-2 mb-4">
-              <Field label="Party name" className="flex-1 min-w-0">
+              <Field label="Function name" className="flex-1 min-w-0">
                 <input className={inputCls} value={party.name} onChange={(e) => update((d) => { d.parties[partyIndex].name = e.target.value; })} placeholder="Night / Convention" />
               </Field>
-              <button className={`${btnCls} shrink-0 hover:border-red-500! hover:text-red-400!`} onClick={removeParty}>Remove party</button>
+              <button className={`${btnCls} shrink-0 hover:border-red-500! hover:text-red-400!`} onClick={removeParty}>Remove function</button>
             </div>
           )}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -398,178 +542,180 @@ export default function EstimateEditor({ initial, onBack }: Props) {
               <input className={inputCls} value={party.event.venue} onChange={(e) => update((d) => { d.parties[partyIndex].event.venue = e.target.value; })} />
             </Field>
             <Field label="Time">
-              <input className={inputCls} value={party.event.time} onChange={(e) => update((d) => { d.parties[partyIndex].event.time = e.target.value; })} placeholder="Lunch / Dinner" />
+              <input className={inputCls} value={party.event.time} onChange={(e) => update((d) => { d.parties[partyIndex].event.time = e.target.value; })} />
             </Field>
             <Field label="Nature">
               <input className={inputCls} value={party.event.nature} onChange={(e) => update((d) => { d.parties[partyIndex].event.nature = e.target.value; })} placeholder="Nikah / Reception" />
             </Field>
           </div>
         </Card>
+          </>
+        )}
 
+        {step === 1 && (
+          <>
         <Card
           title={hasManyParties ? `Menu: ${partyLabel(party, partyIndex)}` : "Menu & items"}
-          actions={<button className={btnCls} onClick={addSection}>+ Section</button>}
         >
           {partyTabs}
-          <Field label="Menu page heading" className="mb-4 md:mb-6">
-            <input className={inputCls} value={q.menuTitle} onChange={(e) => update((d) => { d.menuTitle = e.target.value; })} />
-          </Field>
-          {hasManyParties && (
-            <Field label="Copy menu from" className="mb-4 md:mb-6">
-              <select
-                className={inputCls}
-                value=""
-                onChange={(e) => { if (e.target.value) copyMenuFrom(Number(e.target.value)); }}
-              >
-                <option value="">Choose a party</option>
-                {q.parties.map((p, i) => (i === partyIndex ? null : <option key={p.id} value={i}>{partyLabel(p, i)}</option>))}
-              </select>
-            </Field>
+          <div className="flex gap-2 mb-4">
+            <input
+              type="search"
+              className={inputCls}
+              value={dishSearch}
+              placeholder="Search dishes, e.g. biriyani"
+              aria-label="Search dishes"
+              enterKeyHint="search"
+              onChange={(e) => setDishSearch(e.target.value)}
+            />
+            {isSearching && <button className={`${btnCls} shrink-0`} onClick={() => setDishSearch("")}>Clear</button>}
+          </div>
+
+          {isSearching && (
+            searchResults.length > 0 ? (
+              <div className="divide-y divide-[#1f1f1f]">
+                {searchResults.map(({ section, name }) => {
+                  const checked = !!party.sections.find((s) => sameDish(s.title, section))?.items.some((it) => sameDish(it.name, name));
+                  return (
+                    <label key={`${section}-${name}`} className={`${checkboxLabel} py-1 has-checked:text-primary`}>
+                      <input
+                        type="checkbox"
+                        className="accent-primary w-5 h-5 shrink-0"
+                        checked={checked}
+                        onChange={() => toggleSearchResult(section, name)}
+                      />
+                      <span className="flex-1 min-w-0">{name}</span>
+                      <span className="text-xs text-gray-500 text-right shrink-0 max-w-[40%]">{section}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 py-3">No match. Open a category below and use Add a new dish.</p>
+            )
           )}
+
+          {(!isSearching || searchResults.length === 0) && (
+            <>
 
           <div className="space-y-3 md:space-y-4">
             {party.sections.map((sec, si) => {
-              const isOpen = openSections.has(sec.id);
-              const count = sec.items.filter((i) => i.name.trim()).length;
-              const optionalItems = optionalItemsFor(sec.title);
-              const addedNames = new Set(sec.items.map((i) => i.name.trim().toLowerCase()));
+              if (sec.id !== activeSection?.id) return null;
+              const choices = choicesFor(sec.title);
+              const moreChoices = moreChoicesFor(sec.title);
+              const choiceBoxes = (names: string[]) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4">
+                  {names.map((name) => (
+                    <label key={name} className={`${checkboxLabel} has-checked:text-primary`}>
+                      <input
+                        type="checkbox"
+                        className="accent-primary w-5 h-5 shrink-0"
+                        checked={sec.items.some((it) => sameDish(it.name, name))}
+                        onChange={() => toggleDish(si, name)}
+                      />
+                      {name}
+                    </label>
+                  ))}
+                </div>
+              );
               return (
                 <div key={sec.id} className="border border-[#2a2a2a] bg-[#101010]">
                   <div className="flex items-center gap-1 pr-1.5">
-                    <button
-                      className="flex-1 min-w-0 flex items-center gap-3 px-3 min-h-14 text-left"
-                      onClick={() => toggleSection(sec.id)}
-                      aria-expanded={isOpen}
-                    >
-                      <span className={`text-primary text-lg leading-none transition-transform ${isOpen ? "rotate-90" : ""}`}>›</span>
-                      <span className="flex-1 min-w-0 truncate font-playfair text-base text-primary">{sec.title || "Untitled section"}</span>
-                      <span className="text-xs text-gray-500 shrink-0">
-                        {count} item{count === 1 ? "" : "s"}
-                      </span>
-                    </button>
+                    <div className="flex-1 min-w-0 flex items-center gap-3 px-3 min-h-14">
+                      <h3 className="flex-1 min-w-0 truncate font-playfair text-base text-primary">{sec.title || "Untitled category"}</h3>
+                      <span className="text-xs text-gray-500 shrink-0">{namedItemCount(sec)} selected</span>
+                    </div>
                     <RowMenu
-                      label={sec.title || "Section"}
+                      label={sec.title || "Category"}
                       actions={[
-                        { label: "Move section up", disabled: si === 0, onClick: () => update((d) => move(d.parties[partyIndex].sections, si, si - 1)) },
-                        { label: "Move section down", disabled: si === party.sections.length - 1, onClick: () => update((d) => move(d.parties[partyIndex].sections, si, si + 1)) },
+                        { label: "Move left", disabled: si === 0, onClick: () => update((d) => move(d.parties[partyIndex].sections, si, si - 1)) },
+                        { label: "Move right", disabled: si === party.sections.length - 1, onClick: () => update((d) => move(d.parties[partyIndex].sections, si, si + 1)) },
                         {
-                          label: "Delete section",
+                          label: "Delete category",
                           danger: true,
                           onClick: () => {
-                            if (confirm(`Delete section "${sec.title}"?`)) update((d) => { d.parties[partyIndex].sections.splice(si, 1); });
+                            if (confirm(`Delete category "${sec.title}"?`)) update((d) => { d.parties[partyIndex].sections.splice(si, 1); });
                           },
                         },
                       ]}
                     />
                   </div>
 
-                  {isOpen && (
-                    <div className="border-t border-[#2a2a2a] p-3 space-y-3">
-                      <Field label="Section title">
+                  <div className="border-t border-[#2a2a2a] p-3 space-y-4">
+                    {/* Choice lists are tied to the title, so only custom sections can rename. */}
+                    {choices.length === 0 && (
+                      <Field label="Category name">
                         <input
                           className={`${inputCls} font-playfair text-primary`}
                           value={sec.title}
+                          autoFocus={sec.id === newSectionId}
+                          onFocus={(e) => { if (sec.id === newSectionId) e.target.select(); }}
                           onChange={(e) => setSection(si, (s) => { s.title = e.target.value; })}
                         />
                       </Field>
+                    )}
 
-                      {sec.items.length > 0 && (
-                        <div className="hidden md:grid grid-cols-[1fr_8rem_2rem] gap-2 text-[11px] uppercase tracking-wider text-gray-500 px-1 pt-1">
-                          <span>Item</span>
-                          <span>Quantity</span>
-                          <span />
+                    {choices.length > 0 && choiceBoxes(choices)}
+
+                    {moreChoices.length > 0 && (
+                      <details className="group">
+                        <summary className={`${btnCls} w-fit cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
+                          <span className="group-open:hidden">List all ({moreChoices.length})</span>
+                          <span className="hidden group-open:inline">Hide list</span>
+                        </summary>
+                        <div className="mt-3 border-t border-[#2a2a2a] pt-3">
+                          <p className="text-[11px] uppercase tracking-wider text-gray-500 mb-1">More items</p>
+                          {choiceBoxes(moreChoices)}
                         </div>
-                      )}
-                      <div className="divide-y divide-[#1f1f1f] md:divide-y-0 md:space-y-2">
-                        {sec.items.map((it, ii) => (
-                          <div key={it.id} className="grid grid-cols-[1fr_auto] md:grid-cols-[1fr_8rem_2rem] gap-2 py-3 first:pt-0 md:py-0">
-                            <input
-                              className={`${inputCls} col-span-2 md:col-span-1`}
-                              value={it.name}
-                              placeholder="Item name"
-                              aria-label="Item name"
-                              onChange={(e) => setSection(si, (s) => { s.items[ii].name = e.target.value; })}
-                            />
-                            <input
-                              className={inputCls}
-                              value={it.qty}
-                              placeholder="Qty, e.g. 25 Kg"
-                              aria-label="Quantity"
-                              enterKeyHint="next"
-                              onChange={(e) => setSection(si, (s) => { s.items[ii].qty = e.target.value; })}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  addItem(si, ii + 1);
-                                }
-                              }}
-                            />
-                            <RowMenu
-                              label={it.name || "Item"}
-                              actions={[
-                                { label: "Move up", disabled: ii === 0, onClick: () => setSection(si, (s) => move(s.items, ii, ii - 1)) },
-                                { label: "Move down", disabled: ii === sec.items.length - 1, onClick: () => setSection(si, (s) => move(s.items, ii, ii + 1)) },
-                                { label: "Duplicate", onClick: () => setSection(si, (s) => { s.items.splice(ii + 1, 0, { ...it, id: uid() }); }) },
-                                { label: "Delete", danger: true, onClick: () => setSection(si, (s) => { s.items.splice(ii, 1); }) },
-                              ]}
-                            />
-                          </div>
-                        ))}
+                      </details>
+                    )}
+
+                    <AddDish onAdd={(name) => addDish(si, name)} />
+
+                    {sec.items.length > 0 && (
+                      <div className="border-t border-[#2a2a2a] pt-3">
+                        <p className="text-[11px] uppercase tracking-wider text-gray-500 mb-2">Selected ({sec.items.length})</p>
+                        <div className="space-y-2">
+                          {sec.items.map((it, ii) => (
+                            <div key={it.id} className="grid grid-cols-[auto_1fr_5.5rem] md:grid-cols-[auto_1fr_8rem] items-center gap-2">
+                              <input
+                                type="checkbox"
+                                className="accent-primary w-5 h-5"
+                                checked
+                                aria-label={`Remove ${it.name || "dish"}`}
+                                onChange={() => setSection(si, (s) => { s.items.splice(ii, 1); })}
+                              />
+                              <input
+                                className={inputCls}
+                                value={it.name}
+                                aria-label="Dish name"
+                                onChange={(e) => setSection(si, (s) => { s.items[ii].name = e.target.value; })}
+                              />
+                              <input
+                                className={inputCls}
+                                value={it.qty}
+                                placeholder="Qty"
+                                aria-label="Quantity"
+                                onChange={(e) => setSection(si, (s) => { s.items[ii].qty = e.target.value; })}
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </div>
-
-                      {optionalItems.length > 0 && (
-                        <details className="pt-1">
-                          <summary className={`${btnCls} w-fit cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
-                            Optional items ({optionalItems.length})
-                          </summary>
-                          <div className="flex flex-wrap gap-2 pt-3">
-                            {optionalItems.map((name) => {
-                              const added = addedNames.has(name.toLowerCase());
-                              return (
-                                <button
-                                  key={name}
-                                  className={btnCls}
-                                  disabled={added}
-                                  onClick={() => setSection(si, (s) => { s.items.push({ id: uid(), name, qty: "" }); })}
-                                >
-                                  {added ? `✓ ${name}` : `+ ${name}`}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </details>
-                      )}
-
-                      {bulkFor === sec.id ? (
-                        <div className="pt-1 space-y-2">
-                          <textarea
-                            rows={6}
-                            autoFocus
-                            className={inputCls}
-                            value={bulkText}
-                            onChange={(e) => setBulkText(e.target.value)}
-                            placeholder={"One item per line, quantity after a dash:\nChicken Nuggets – 25 Kg\nGreek Salad"}
-                          />
-                          <div className="grid grid-cols-2 md:flex gap-2">
-                            <button className={btnCls} onClick={() => applyBulk(si)}>Add items</button>
-                            <button className={btnCls} onClick={() => { setBulkFor(null); setBulkText(""); }}>Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="grid md:flex gap-2 pt-1">
-                          <button className={btnCls} onClick={() => addItem(si)}>+ Item</button>
-                          {/* Paste list hidden for now
-                          <button className={btnCls} onClick={() => { setBulkFor(sec.id); setBulkText(""); }}>Paste list</button> */}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
+            </>
+          )}
         </Card>
+          </>
+        )}
 
+        {step === 2 && (
+          <>
         <Card
           title="Pricing"
           actions={
@@ -634,6 +780,60 @@ export default function EstimateEditor({ initial, onBack }: Props) {
             <p className="text-xs text-gray-500 text-right">{amountInWords(total)}</p>
           </div>
         </Card>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+        <Card title="Send estimate">
+          <div className="border border-[#333] bg-[#0a0a0a] p-4 mb-4 text-sm space-y-1">
+            <p className="font-playfair text-lg text-gray-100">{q.client.name}</p>
+            <p className="text-gray-400">{q.number}</p>
+            <p className="font-playfair text-xl text-primary pt-1">₹ {formatINR(total)}</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {canSend && (
+              <>
+                <button className={`${primaryBtnCls} min-h-12!`} onClick={sendPdf} disabled={actionsDisabled}>
+                  {preparingPdf ? "Preparing…" : "Send PDF"}
+                </button>
+                <button className={`${primaryBtnCls} min-h-12!`} onClick={sendImages} disabled={actionsDisabled || preparingImages}>
+                  {preparingImages ? "Preparing…" : "Send Images"}
+                </button>
+              </>
+            )}
+            <button className={btnCls} onClick={preview} disabled={actionsDisabled}>{previewLabel}</button>
+            <button className={btnCls} onClick={download} disabled={actionsDisabled}>{downloadLabel}</button>
+            <button className={`${btnCls} sm:col-span-2`} onClick={downloadImages} disabled={actionsDisabled}>{imagesLabel}</button>
+          </div>
+        </Card>
+
+        <details className="group">
+          <summary className={`${btnCls} w-fit cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
+            <span className="group-open:hidden">More options</span>
+            <span className="hidden group-open:inline">Hide options</span>
+          </summary>
+          <div className="mt-4 space-y-4 md:space-y-6">
+        <Card title="Document">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Field label="Document title">
+              <input className={inputCls} value={q.documentTitle} onChange={(e) => update((d) => { d.documentTitle = e.target.value; })} placeholder="Estimate / Quotation" />
+            </Field>
+            <Field label="Number">
+              <input className={inputCls} value={q.number} onChange={(e) => update((d) => { d.number = e.target.value; })} />
+            </Field>
+            <Field label="Date">
+              <input type="date" className={inputCls} value={q.date} onChange={(e) => update((d) => { d.date = e.target.value; })} />
+            </Field>
+            <label className={`${checkboxLabel} sm:self-end`}>
+              <input type="checkbox" className="accent-primary w-5 h-5" checked={q.showCover} onChange={(e) => update((d) => { d.showCover = e.target.checked; })} />
+              Include cover page
+            </label>
+          </div>
+          <Field label="Menu page heading" className="mt-4">
+            <input className={inputCls} value={q.menuTitle} onChange={(e) => update((d) => { d.menuTitle = e.target.value; })} />
+          </Field>
+        </Card>
 
         <Card title="Notes & terms">
           <div className="space-y-4">
@@ -684,24 +884,21 @@ export default function EstimateEditor({ initial, onBack }: Props) {
             </Field>
           </div>
         </Card>
+          </div>
+        </details>
+          </>
+        )}
       </main>
 
-      {/* Phone action bar: total and PDF actions always within thumb reach. */}
-      <div className="md:hidden fixed inset-x-0 bottom-0 z-30 bg-[#1a1346]/95 backdrop-blur-md border-t border-white/10 px-3 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)]">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Total</p>
-            <p className="font-playfair text-primary text-lg leading-tight truncate">₹ {formatINR(total)}</p>
-          </div>
-          <button className={btnCls} onClick={preview} disabled={!!busy}>
-            {previewLabel}
-          </button>
-          <button className={btnCls} onClick={downloadImages} disabled={!!busy}>
-            {busy === "images" ? "Generating…" : "Images"}
-          </button>
-          <button className={primaryBtnCls} onClick={download} disabled={!!busy}>
-            {busy === "download" ? "Generating…" : "PDF"}
-          </button>
+      <div className="fixed inset-x-0 bottom-0 z-30 bg-[#0a0a0a]/95 backdrop-blur-md border-t border-white/10 px-3 md:px-8 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+0.625rem)]">
+        <div className="max-w-275 mx-auto flex items-center gap-2">
+          {step > 0 && <button className={btnCls} onClick={() => goToStep(step - 1)}>Back</button>}
+          <p className="flex-1 min-w-0 truncate text-center font-playfair text-primary">{stepSummary}</p>
+          {step < STEPS.length - 1 ? (
+            <button className={primaryBtnCls} onClick={() => goToStep(step + 1)}>Next: {STEPS[step + 1]}</button>
+          ) : (
+            <button className={primaryBtnCls} onClick={onBack}>Done</button>
+          )}
         </div>
       </div>
 

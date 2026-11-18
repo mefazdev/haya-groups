@@ -6,7 +6,7 @@ export const uid = () =>
 export const grandTotalOf = (q: Estimate) =>
   q.costs.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
 
-export const partyLabel = (party: Party, index: number) => party.name.trim() || `Party ${index + 1}`;
+export const partyLabel = (party: Party, index: number) => party.name.trim() || `Function ${index + 1}`;
 
 // With several parties, each food cost row is named after its party.
 export const costLabel = (q: Estimate, cost: CostRow) => {

@@ -51,7 +51,7 @@ export default function EstimatesApp() {
   );
 
   return (
-    <div className="min-h-screen bg-[#1a1346] text-gray-100 font-inter">
+    <div className="min-h-screen bg-[#0a0a0a] text-gray-100 font-inter">
       <header className="border-b border-white/5 py-4">
         <div className="max-w-275 mx-auto px-3 md:px-8 flex items-center justify-between gap-4">
           <div className="relative h-12 w-16">

@@ -21,80 +21,77 @@ export function registerFonts(origin: string) {
   Font.registerHyphenationCallback((word) => [word]);
 }
 
-type Palette = Record<"GOLD" | "DEEP" | "INK" | "MUTED" | "PAGE" | "COVER" | "COVER_TEXT" | "COVER_MUTED" | "BAND" | "LINE" | "TABLE_HEAD", string>;
+type Palette = Record<"ACCENT" | "DEEP" | "INK" | "MUTED" | "PAGE" | "COVER" | "COVER_TEXT" | "COVER_MUTED" | "BAND" | "LINE" | "TABLE_HEAD", string>;
 
-const BACKGROUND = "#1a1346";
-
-// Every page sits on the brand background, so text colors flip to stay readable.
 const PALETTE: Palette = {
-  GOLD: "#c9a96e",
-  DEEP: "#e3c88f",
-  INK: "#f5f1e8",
-  MUTED: "#b8b2d4",
-  PAGE: BACKGROUND,
-  COVER: BACKGROUND,
+  ACCENT: "#a88a55",
+  DEEP: "#5c4726",
+  INK: "#26221c",
+  MUTED: "#6f675b",
+  PAGE: "#f8f3ea",
+  COVER: "#14120f",
   COVER_TEXT: "#f8f3ea",
-  COVER_MUTED: "#cfc8e0",
-  BAND: BACKGROUND,
-  LINE: "#40387a",
-  TABLE_HEAD: "#2a2263",
+  COVER_MUTED: "#cbbf9f",
+  BAND: "#14120f",
+  LINE: "#d9ccb4",
+  TABLE_HEAD: "#efe5d3",
 };
 
-const makeStyles = ({ GOLD, DEEP, INK, MUTED, PAGE, COVER, COVER_TEXT, COVER_MUTED, BAND, LINE, TABLE_HEAD }: Palette) => StyleSheet.create({
-  page: { backgroundColor: PAGE, fontFamily: "Sans", fontSize: 10, color: INK, paddingTop: 56, paddingBottom: 72, paddingHorizontal: 64 },
-  frame: { position: "absolute", top: 24, left: 24, right: 24, bottom: 48, borderWidth: 0.8, borderColor: GOLD, borderRadius: 22 },
-  footer: { position: "absolute", left: 40, right: 40, bottom: 22, flexDirection: "row", justifyContent: "space-between", fontSize: 8, color: MUTED },
+const makeStyles = ({ ACCENT, DEEP, INK, MUTED, PAGE, COVER, COVER_TEXT, COVER_MUTED, BAND, LINE, TABLE_HEAD }: Palette) => StyleSheet.create({
+  page: { backgroundColor: PAGE, fontFamily: "Sans", fontSize: 12, color: INK, paddingTop: 56, paddingBottom: 72, paddingHorizontal: 56 },
+  frame: { position: "absolute", top: 24, left: 24, right: 24, bottom: 48, borderWidth: 0.8, borderColor: ACCENT, borderRadius: 22 },
+  footer: { position: "absolute", left: 40, right: 40, bottom: 22, flexDirection: "row", justifyContent: "space-between", fontSize: 9.5, color: MUTED },
 
   cover: { backgroundColor: COVER, color: COVER_TEXT, fontFamily: "Sans", padding: 0 },
-  coverFrame: { position: "absolute", top: 28, left: 28, right: 28, bottom: 28, borderWidth: 0.8, borderColor: GOLD, borderRadius: 26 },
+  coverFrame: { position: "absolute", top: 28, left: 28, right: 28, bottom: 28, borderWidth: 0.8, borderColor: ACCENT, borderRadius: 26 },
   coverBody: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 72 },
   coverLogo: { width: 210, height: 160, objectFit: "contain", marginBottom: 28 },
-  coverName: { fontFamily: "Serif", fontSize: 30, color: GOLD, textAlign: "center" },
-  coverTagline: { fontSize: 11, letterSpacing: 4, textTransform: "uppercase", color: COVER_MUTED, marginTop: 8 },
-  coverRule: { width: 60, height: 1, backgroundColor: GOLD, marginVertical: 30 },
-  coverDoc: { fontSize: 10, letterSpacing: 3, textTransform: "uppercase", color: COVER_MUTED },
-  coverClient: { fontFamily: "Serif", fontSize: 20, marginTop: 6, textAlign: "center" },
-  coverEvent: { fontSize: 10, color: COVER_MUTED, marginTop: 10, textAlign: "center" },
-  coverContact: { position: "absolute", left: 64, right: 64, bottom: 60, textAlign: "center", fontSize: 9, color: COVER_MUTED, lineHeight: 1.6 },
+  coverName: { fontFamily: "Serif", fontSize: 36, color: ACCENT, textAlign: "center" },
+  coverTagline: { fontSize: 13, letterSpacing: 4, textTransform: "uppercase", color: COVER_MUTED, marginTop: 8 },
+  coverRule: { width: 60, height: 1, backgroundColor: ACCENT, marginVertical: 30 },
+  coverDoc: { fontSize: 12, letterSpacing: 3, textTransform: "uppercase", color: COVER_MUTED },
+  coverClient: { fontFamily: "Serif", fontSize: 24, marginTop: 6, textAlign: "center" },
+  coverEvent: { fontSize: 12, color: COVER_MUTED, marginTop: 10, textAlign: "center" },
+  coverContact: { position: "absolute", left: 64, right: 64, bottom: 60, textAlign: "center", fontSize: 11, color: COVER_MUTED, lineHeight: 1.6 },
 
-  menuTitle: { fontFamily: "Serif", fontWeight: "bold", fontSize: 22, color: DEEP, textAlign: "center", marginBottom: 18 },
-  partyName: { fontFamily: "Serif", fontWeight: "bold", fontSize: 15, color: GOLD, textAlign: "center" },
-  partyMeta: { fontSize: 9, color: MUTED, textAlign: "center", marginTop: 3, marginBottom: 8 },
-  sectionTitle: { fontFamily: "Serif", fontWeight: "bold", fontSize: 12.5, color: DEEP, marginTop: 14, marginBottom: 6, paddingBottom: 3, borderBottomWidth: 0.6, borderBottomColor: LINE },
+  menuTitle: { fontFamily: "Serif", fontWeight: "bold", fontSize: 26.5, color: DEEP, textAlign: "center", marginBottom: 18 },
+  partyName: { fontFamily: "Serif", fontWeight: "bold", fontSize: 18, color: ACCENT, textAlign: "center" },
+  partyMeta: { fontSize: 11, color: MUTED, textAlign: "center", marginTop: 3, marginBottom: 8 },
+  sectionTitle: { fontFamily: "Serif", fontWeight: "bold", fontSize: 15, color: DEEP, marginTop: 14, marginBottom: 6, paddingBottom: 3, borderBottomWidth: 0.6, borderBottomColor: LINE },
   items: { flexDirection: "row", flexWrap: "wrap" },
   item: { flexDirection: "row", paddingVertical: 2, paddingLeft: 10 },
-  bullet: { width: 10, color: GOLD },
+  bullet: { width: 12, color: ACCENT },
   itemName: { flex: 1 },
   itemQty: { marginLeft: 8, color: DEEP, fontWeight: "bold" },
 
-  band: { backgroundColor: BAND, marginHorizontal: -64, marginTop: -56, paddingHorizontal: 64, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  bandTitle: { color: GOLD, fontSize: 18, letterSpacing: 8, textTransform: "uppercase" },
+  band: { backgroundColor: BAND, marginHorizontal: -56, marginTop: -56, paddingHorizontal: 56, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+  bandTitle: { color: ACCENT, fontSize: 21.5, letterSpacing: 8, textTransform: "uppercase" },
   bandLogo: { width: 62, height: 47, objectFit: "contain" },
   row: { flexDirection: "row" },
-  companyName: { fontFamily: "Serif", fontWeight: "bold", fontSize: 13, color: DEEP, marginBottom: 3 },
-  small: { fontSize: 9, color: MUTED, lineHeight: 1.45 },
-  metaLabel: { fontSize: 8, color: MUTED, textTransform: "uppercase", letterSpacing: 1 },
-  metaValue: { fontSize: 10, fontWeight: "bold", color: DEEP, marginBottom: 6 },
-  blockTitle: { fontSize: 8.5, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, color: DEEP, paddingBottom: 4, marginBottom: 6, borderBottomWidth: 0.8, borderBottomColor: GOLD },
+  companyName: { fontFamily: "Serif", fontWeight: "bold", fontSize: 15.5, color: DEEP, marginBottom: 3 },
+  small: { fontSize: 11, color: MUTED, lineHeight: 1.45 },
+  metaLabel: { fontSize: 9.5, color: MUTED, textTransform: "uppercase", letterSpacing: 1 },
+  metaValue: { fontSize: 12, fontWeight: "bold", color: DEEP, marginBottom: 6 },
+  blockTitle: { fontSize: 10, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 1, color: DEEP, paddingBottom: 4, marginBottom: 6, borderBottomWidth: 0.8, borderBottomColor: ACCENT },
   detailRow: { flexDirection: "row", paddingVertical: 2, borderBottomWidth: 0.4, borderBottomColor: LINE },
-  detailLabel: { width: 70, color: MUTED, fontSize: 9 },
-  detailValue: { flex: 1, fontSize: 9.5 },
+  detailLabel: { width: 84, color: MUTED, fontSize: 11 },
+  detailValue: { flex: 1, fontSize: 11.5 },
 
-  table: { marginTop: 16, borderWidth: 0.8, borderColor: GOLD },
-  th: { flexDirection: "row", backgroundColor: TABLE_HEAD, borderBottomWidth: 0.8, borderBottomColor: GOLD },
+  table: { marginTop: 16, borderWidth: 0.8, borderColor: ACCENT },
+  th: { flexDirection: "row", backgroundColor: TABLE_HEAD, borderBottomWidth: 0.8, borderBottomColor: ACCENT },
   tr: { flexDirection: "row", borderBottomWidth: 0.4, borderBottomColor: LINE },
   cellDesc: { flex: 3, padding: 5, fontWeight: "bold" },
   cellRemarks: { flex: 2.4, padding: 5, borderLeftWidth: 0.4, borderLeftColor: LINE, color: MUTED },
-  cellAmt: { width: 100, padding: 5, textAlign: "right", borderLeftWidth: 0.4, borderLeftColor: LINE },
-  thText: { fontSize: 8.5, textTransform: "uppercase", letterSpacing: 1, color: DEEP, fontWeight: "bold" },
+  cellAmt: { width: 118, padding: 5, textAlign: "right", borderLeftWidth: 0.4, borderLeftColor: LINE },
+  thText: { fontSize: 10, textTransform: "uppercase", letterSpacing: 1, color: DEEP, fontWeight: "bold" },
 
-  totals: { alignSelf: "flex-end", width: 250, marginTop: 10 },
-  grand: { flexDirection: "row", justifyContent: "space-between", marginTop: 4, paddingTop: 6, borderTopWidth: 0.8, borderTopColor: GOLD },
-  grandText: { fontSize: 13, fontWeight: "bold", color: DEEP },
-  words: { textAlign: "right", fontWeight: "bold", color: DEEP, fontSize: 10, marginTop: 8 },
+  totals: { alignSelf: "flex-end", width: 300, marginTop: 10 },
+  grand: { flexDirection: "row", justifyContent: "space-between", marginTop: 4, paddingTop: 6, borderTopWidth: 0.8, borderTopColor: ACCENT },
+  grandText: { fontSize: 15.5, fontWeight: "bold", color: DEEP },
+  words: { textAlign: "right", fontWeight: "bold", color: DEEP, fontSize: 12, marginTop: 8 },
 
-  notesTitle: { fontSize: 9, fontWeight: "bold", color: DEEP, marginTop: 10, marginBottom: 3 },
-  sign: { width: 175, marginTop: 10, justifyContent: "flex-end", paddingLeft: 12, borderLeftWidth: 0.6, borderLeftColor: LINE },
+  notesTitle: { fontSize: 11, fontWeight: "bold", color: DEEP, marginTop: 10, marginBottom: 3 },
+  sign: { width: 170, marginTop: 10, justifyContent: "flex-end", paddingLeft: 12, borderLeftWidth: 0.6, borderLeftColor: LINE },
 });
 
 const s = makeStyles(PALETTE);
@@ -227,7 +224,7 @@ export function EstimateDocument({ q, logoSrc }: { q: Estimate; logoSrc: string 
         <View style={[s.row, { marginTop: 20 }]}>
           <View style={{ flex: 1, marginRight: 24 }}>
             <Text style={s.blockTitle}>Bill To</Text>
-            <Text style={{ fontWeight: "bold", fontSize: 10.5 }}>{q.client.name}</Text>
+            <Text style={{ fontWeight: "bold", fontSize: 12.5 }}>{q.client.name}</Text>
             {q.client.phone ? <Text style={s.small}>{q.client.phone}</Text> : null}
             {q.client.address ? <Text style={s.small}>{q.client.address}</Text> : null}
           </View>
@@ -290,7 +287,7 @@ export function EstimateDocument({ q, logoSrc }: { q: Estimate; logoSrc: string 
             ) : null}
           </View>
           <View style={s.sign} wrap={false}>
-            <Text style={{ fontSize: 9.5 }}>For {q.company.name},</Text>
+            <Text style={{ fontSize: 11.5 }}>For {q.company.name},</Text>
             <View style={{ height: 30 }} />
             {q.signatory.name ? <Text style={{ fontWeight: "bold" }}>{q.signatory.name}</Text> : null}
             {q.signatory.title ? <Text style={s.small}>{q.signatory.title}</Text> : null}
@@ -315,11 +312,11 @@ export async function renderEstimatePdf(q: Estimate): Promise<Blob> {
 const IMAGE_SCALE = 2.5;
 
 // One PNG per page, so images always match the PDF layout and pagination.
-export async function renderEstimateImages(q: Estimate): Promise<Blob[]> {
+export async function renderEstimateImages(q: Estimate, pdfBlob?: Blob): Promise<Blob[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url).toString();
 
-  const data = await (await renderEstimatePdf(q)).arrayBuffer();
+  const data = await (pdfBlob ?? (await renderEstimatePdf(q))).arrayBuffer();
   const task = pdfjs.getDocument({ data });
   try {
     const doc = await task.promise;
