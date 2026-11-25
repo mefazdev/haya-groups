@@ -4,8 +4,8 @@ import { SESSION_COOKIE, isValidSession } from "./auth";
 
 /** Verifies the staff session cookie inside Route Handlers. Returns a 401 response if invalid. */
 export async function requireEstimateAuth(): Promise<NextResponse | null> {
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!isValidSession(token)) {
+  const sessionCookies = (await cookies()).getAll(SESSION_COOKIE);
+  if (!sessionCookies.some((c) => isValidSession(c.value))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return null;

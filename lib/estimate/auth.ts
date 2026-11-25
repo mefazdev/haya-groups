@@ -45,3 +45,11 @@ export const isValidSession = (token: string | undefined) => {
   if (!expires || !signature || rest.length > 0) return false;
   return Number(expires) > Date.now() / 1000 && isSame(signature, sign(expires, expected));
 };
+
+export const clearSessionCookieHeaders = () => {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return [
+    `${SESSION_COOKIE}=; Path=/estimates; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure}`,
+    `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure}`,
+  ];
+};

@@ -23,7 +23,6 @@ export async function login(_previous: LoginState, form: FormData): Promise<Logi
   }
 
   const store = await cookies();
-  store.delete({ name: SESSION_COOKIE, path: "/estimates" });
   store.set(SESSION_COOKIE, createSessionToken(), {
     httpOnly: true,
     sameSite: "lax",
@@ -36,7 +35,6 @@ export async function login(_previous: LoginState, form: FormData): Promise<Logi
 
 export async function logout() {
   const store = await cookies();
-  store.delete({ name: SESSION_COOKIE, path: "/estimates" });
   store.delete({ name: SESSION_COOKIE, path: "/" });
-  redirect("/estimates/login");
+  redirect("/estimates/login?logged_out=1");
 }

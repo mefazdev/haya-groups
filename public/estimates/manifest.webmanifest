@@ -1,0 +1,32 @@
+{
+  "id": "/estimates",
+  "name": "Adco Caterers Estimates",
+  "short_name": "Adco Estimates",
+  "description": "Create, edit, and share catering estimates for Adco Caterers.",
+  "start_url": "/estimates",
+  "scope": "/estimates",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8f3ea",
+  "theme_color": "#14120f",
+  "icons": [
+    {
+      "src": "/estimates/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/estimates/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/estimates/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

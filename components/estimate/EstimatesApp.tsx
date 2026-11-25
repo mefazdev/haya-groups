@@ -13,8 +13,8 @@ import {
   importLocalEstimates,
   readLocalEstimates,
 } from "@/lib/estimate/storage";
-import { logout } from "@/app/estimates/actions";
 import EstimateEditor from "./EstimateEditor";
+import EstimatePwaInstall from "./EstimatePwaInstall";
 import MenuManager from "./MenuManager";
 
 type View =
@@ -161,7 +161,8 @@ export default function EstimatesApp({ initialEstimates, initialMenuCatalog }: P
           <div className="relative h-12 w-16 shrink-0">
             <Image src="/images/adco-logo.png" alt="Adco Caterers" className="object-contain" fill />
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <EstimatePwaInstall />
             <button
               type="button"
               onClick={() => setView({ kind: "menu" })}
@@ -169,7 +170,7 @@ export default function EstimatesApp({ initialEstimates, initialMenuCatalog }: P
             >
               Dishes &amp; Categories
             </button>
-            <form action={logout}>
+            <form action="/estimates/api/logout" method="POST">
               <button type="submit" className="min-h-11 px-2 text-base text-[#f8f3ea] underline underline-offset-4">
                 Log out
               </button>
