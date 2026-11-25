@@ -22,17 +22,21 @@ export async function login(_previous: LoginState, form: FormData): Promise<Logi
     return { error: "Incorrect username or password.", username };
   }
 
-  (await cookies()).set(SESSION_COOKIE, createSessionToken(), {
+  const store = await cookies();
+  store.delete({ name: SESSION_COOKIE, path: "/estimates" });
+  store.set(SESSION_COOKIE, createSessionToken(), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    path: "/estimates",
+    path: "/",
     maxAge: SESSION_MAX_AGE,
   });
   redirect("/estimates");
 }
 
 export async function logout() {
-  (await cookies()).delete({ name: SESSION_COOKIE, path: "/estimates" });
+  const store = await cookies();
+  store.delete({ name: SESSION_COOKIE, path: "/estimates" });
+  store.delete({ name: SESSION_COOKIE, path: "/" });
   redirect("/estimates/login");
 }

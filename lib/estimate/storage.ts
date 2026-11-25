@@ -1,94 +1,175 @@
-import type { Estimate, EventDetails, Party, Section } from "./types";
-import { buildDefaultTemplate } from "./defaults";
-import { copySections, uid } from "./utils";
+import { upgradeEstimate, type StoredEstimate } from "./defaults";
+import type { Estimate, MenuCategoryRecord, MenuItemRecord } from "./types";
 
-// Estimates are kept in the browser's localStorage, so they stay on this device only.
 const LIST_KEY = "haya.quotations.v1";
 const COUNTER_KEY = "haya.quotationCounter.v1";
 
-const read = <T,>(key: string, fallback: T): T => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
+async function api<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (res.status === 401 && typeof window !== "undefined") {
+    window.location.href = "/estimates/login";
+    throw new Error("Session expired");
   }
-};
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
 
-const write = (key: string, value: unknown) => {
-  localStorage.setItem(key, JSON.stringify(value));
-};
+/* ---------------- Local Browser Migration Helpers ---------------- */
 
-type StoredEstimate = Omit<Estimate, "parties" | "wasteTerms"> & {
-  parties?: Party[];
-  wasteTerms?: string;
-  event?: EventDetails;
-  sections?: Section[];
-};
+export function readLocalEstimates(): Estimate[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LIST_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as StoredEstimate[];
+    return Array.isArray(parsed) ? parsed.map(upgradeEstimate) : [];
+  } catch {
+    return [];
+  }
+}
 
-// Older estimates hold one event and menu directly, which becomes their only party.
-const upgradeEstimate = ({ event, sections, parties, wasteTerms = "", ...stored }: StoredEstimate): Estimate => {
-  const rest = { ...stored, wasteTerms };
-  if (parties) return { ...rest, parties };
-  const party: Party = {
-    id: uid(),
-    name: "",
-    event: event ?? { date: "", venue: "", pax: "", time: "", nature: "" },
-    sections: sections ?? [],
-  };
-  const foodCost = rest.costs.find((c) => /food/i.test(c.description));
-  return { ...rest, parties: [party], costs: rest.costs.map((c) => (c === foodCost ? { ...c, partyId: party.id } : c)) };
-};
+export function clearLocalEstimates() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(LIST_KEY);
+    localStorage.removeItem(COUNTER_KEY);
+  } catch {
+    // Ignore storage access errors.
+  }
+}
 
-export const loadEstimates = (): Estimate[] =>
-  read<StoredEstimate[]>(LIST_KEY, []).map(upgradeEstimate).sort((a, b) => b.updatedAt - a.updatedAt);
+/* ---------------- Estimates Cloud API ---------------- */
 
-export const saveEstimate = (q: Estimate) => {
-  const list = read<Estimate[]>(LIST_KEY, []);
-  const i = list.findIndex((x) => x.id === q.id);
-  if (i >= 0) list[i] = q;
-  else list.push(q);
-  write(LIST_KEY, list);
-};
+export async function fetchEstimatesState(): Promise<{
+  estimates: Estimate[];
+  menuCatalog: MenuCategoryRecord[];
+}> {
+  return api("/estimates/api/estimates", { cache: "no-store" });
+}
 
-export const deleteEstimate = (id: string) => {
-  write(LIST_KEY, read<Estimate[]>(LIST_KEY, []).filter((q) => q.id !== id));
-};
+export async function createEstimate(): Promise<Estimate> {
+  const res = await api<{ estimate: Estimate }>("/estimates/api/estimates", {
+    method: "POST",
+    body: JSON.stringify({ action: "create" }),
+  });
+  return res.estimate;
+}
 
-const nextNumber = () => {
-  const n = read<number>(COUNTER_KEY, 0) + 1;
-  write(COUNTER_KEY, n);
-  return `ADCO-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`;
-};
+export async function duplicateEstimate(sourceId: string): Promise<Estimate> {
+  const res = await api<{ estimate: Estimate }>("/estimates/api/estimates", {
+    method: "POST",
+    body: JSON.stringify({ action: "duplicate", sourceId }),
+  });
+  return res.estimate;
+}
 
-const today = () => {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+export async function importLocalEstimates(estimates: Estimate[]): Promise<{
+  imported: number;
+  estimates: Estimate[];
+}> {
+  return api("/estimates/api/estimates", {
+    method: "POST",
+    body: JSON.stringify({ action: "import", estimates }),
+  });
+}
 
-// Fresh ids so edits to the copy never collide with the source.
-const reId = (q: Estimate): Estimate => {
-  const partyIds = new Map(q.parties.map((p) => [p.id, uid()]));
-  return {
-    ...q,
-    parties: q.parties.map((p) => ({ ...p, id: partyIds.get(p.id) ?? uid(), sections: copySections(p.sections) })),
-    costs: q.costs.map((c) => ({ ...c, id: uid(), partyId: c.partyId && partyIds.get(c.partyId) })),
-  };
-};
+export async function saveEstimate(q: Estimate, keepalive = false): Promise<Estimate> {
+  const res = await api<{ estimate: Estimate }>(`/estimates/api/estimates/${encodeURIComponent(q.id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ estimate: q }),
+    keepalive,
+  });
+  return res.estimate;
+}
 
-export const createFromTemplate = (): Estimate => ({
-  ...buildDefaultTemplate(),
-  id: uid(),
-  number: nextNumber(),
-  date: today(),
-  updatedAt: Date.now(),
-});
+export async function deleteEstimate(id: string): Promise<void> {
+  await api(`/estimates/api/estimates/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
 
-export const duplicateEstimate = (q: Estimate): Estimate => ({
-  ...reId(structuredClone(q)),
-  id: uid(),
-  number: nextNumber(),
-  date: today(),
-  updatedAt: Date.now(),
-});
+export async function createShareLink(id: string): Promise<string> {
+  const res = await api<{ shareToken: string }>(`/estimates/api/estimates/${encodeURIComponent(id)}/share`, {
+    method: "POST",
+  });
+  return res.shareToken;
+}
+
+export async function revokeShareLink(id: string): Promise<void> {
+  await api(`/estimates/api/estimates/${encodeURIComponent(id)}/share`, { method: "DELETE" });
+}
+
+/* ---------------- Master Menu Catalog API ---------------- */
+
+export async function createMenuCategoryApi(input: {
+  title: string;
+  kind?: "dish" | "utensil";
+  columns?: 1 | 2;
+}): Promise<{ category: MenuCategoryRecord; menuCatalog: MenuCategoryRecord[] }> {
+  return api("/estimates/api/menu/categories", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateMenuCategoryApi(
+  id: string,
+  patch: { title?: string; columns?: 1 | 2; kind?: "dish" | "utensil" },
+): Promise<MenuCategoryRecord[]> {
+  const res = await api<{ menuCatalog: MenuCategoryRecord[] }>(
+    `/estimates/api/menu/categories/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+  return res.menuCatalog;
+}
+
+export async function reorderMenuCategoriesApi(orderedIds: string[]): Promise<MenuCategoryRecord[]> {
+  const res = await api<{ menuCatalog: MenuCategoryRecord[] }>("/estimates/api/menu/categories", {
+    method: "PATCH",
+    body: JSON.stringify({ orderedIds }),
+  });
+  return res.menuCatalog;
+}
+
+export async function deleteMenuCategoryApi(id: string): Promise<MenuCategoryRecord[]> {
+  const res = await api<{ menuCatalog: MenuCategoryRecord[] }>(
+    `/estimates/api/menu/categories/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+  return res.menuCatalog;
+}
+
+export async function createMenuItemApi(input: {
+  categoryId: string;
+  name: string;
+  isOptional?: boolean;
+}): Promise<{ item: MenuItemRecord; menuCatalog: MenuCategoryRecord[] }> {
+  return api("/estimates/api/menu/items", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateMenuItemApi(
+  id: string,
+  patch: { name?: string; categoryId?: string; isOptional?: boolean },
+): Promise<MenuCategoryRecord[]> {
+  const res = await api<{ menuCatalog: MenuCategoryRecord[] }>(
+    `/estimates/api/menu/items/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+  return res.menuCatalog;
+}
+
+export async function deleteMenuItemApi(id: string): Promise<MenuCategoryRecord[]> {
+  const res = await api<{ menuCatalog: MenuCategoryRecord[] }>(
+    `/estimates/api/menu/items/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+  return res.menuCatalog;
+}

@@ -1,11 +1,23 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { Estimate, MenuCategoryRecord } from "@/lib/estimate/types";
 
-// Estimates live in localStorage, so the tool only renders in the browser.
 const EstimatesApp = dynamic(() => import("./EstimatesApp"), {
-  ssr: false,
   loading: () => <div className="min-h-screen bg-[#f8f3ea]" />,
 });
 
-export default EstimatesApp;
+export default function EstimatesClient({
+  initialEstimates,
+  initialMenuCatalog,
+}: {
+  initialEstimates: Estimate[];
+  initialMenuCatalog: MenuCategoryRecord[];
+}) {
+  return (
+    <EstimatesApp
+      initialEstimates={initialEstimates}
+      initialMenuCatalog={initialMenuCatalog}
+    />
+  );
+}

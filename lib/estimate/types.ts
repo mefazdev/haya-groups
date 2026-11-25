@@ -67,4 +67,22 @@ export interface Estimate {
     contact: string;
   };
   updatedAt: number;
+  shareToken?: string | null;
+}
+
+export interface MenuItemRecord {
+  id: string;
+  categoryId: string;
+  name: string;
+  isOptional: boolean;
+  sortOrder: number;
+}
+
+export interface MenuCategoryRecord {
+  id: string;
+  title: string;
+  kind: "dish" | "utensil";
+  columns: 1 | 2;
+  sortOrder: number;
+  items: MenuItemRecord[];
 }

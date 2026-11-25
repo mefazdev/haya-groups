@@ -1,9 +1,15 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState, ReactNode } from "react";
-import type { Estimate, Section } from "@/lib/estimate/types";
+import { FormEvent, useCallback, useEffect, useRef, useState, ReactNode } from "react";
+import type { Estimate, MenuCategoryRecord, Section } from "@/lib/estimate/types";
 import { amountInWords, costLabel, formatINR, grandTotalOf, partyLabel, uid } from "@/lib/estimate/utils";
-import { saveEstimate } from "@/lib/estimate/storage";
+import {
+  createMenuCategoryApi,
+  createMenuItemApi,
+  createShareLink,
+  revokeShareLink,
+  saveEstimate,
+} from "@/lib/estimate/storage";
 import { choicesFor, createParty, moreChoicesFor, searchChoices } from "@/lib/estimate/defaults";
 
 // Mobile first: 16px text so iOS doesn't zoom on focus, 48px tap targets; denser from md up.
@@ -90,37 +96,54 @@ const toggleItem = (section: Section, name: string) => {
 
 const namedItemCount = (section: Section) => section.items.filter((it) => it.name.trim()).length;
 
-function AddDish({ onAdd }: { onAdd: (name: string) => void }) {
+function AddDish({ onAdd }: { onAdd: (name: string, saveToMaster: boolean) => void }) {
   const [name, setName] = useState("");
+  const [saveToMaster, setSaveToMaster] = useState(true);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onAdd(name.trim());
+    onAdd(name.trim(), saveToMaster);
     setName("");
   };
   return (
-    <form className="flex gap-2" onSubmit={submit}>
-      <input
-        className={inputCls}
-        value={name}
-        placeholder="Add a dish not in the list"
-        aria-label="Add a new dish"
-        enterKeyHint="done"
-        onChange={(e) => setName(e.target.value)}
-      />
-      <button type="submit" className={`${btnCls} shrink-0`}>Add</button>
+    <form className="space-y-2" onSubmit={submit}>
+      <div className="flex gap-2">
+        <input
+          className={inputCls}
+          value={name}
+          placeholder="Add a dish not in the list"
+          aria-label="Add a new dish"
+          enterKeyHint="done"
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button type="submit" className={`${btnCls} shrink-0`}>Add</button>
+      </div>
+      <label className="inline-flex items-center gap-2 text-sm text-[#5f574b] cursor-pointer">
+        <input
+          type="checkbox"
+          className="accent-[#6f5629] w-4 h-4"
+          checked={saveToMaster}
+          onChange={(e) => setSaveToMaster(e.target.checked)}
+        />
+        Also save to master menu for future estimates
+      </label>
     </form>
   );
 }
 
 interface Props {
   initial: Estimate;
+  menuCatalog: MenuCategoryRecord[];
+  onMenuCatalogChange: (catalog: MenuCategoryRecord[]) => void;
   onBack: () => void;
 }
 
-export default function EstimateEditor({ initial, onBack }: Props) {
+export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChange, onBack }: Props) {
   const [q, setQ] = useState<Estimate>(initial);
-  const [saved, setSaved] = useState(true);
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
+  const [shareToken, setShareToken] = useState<string | null>(initial.shareToken ?? null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [busy, setBusy] = useState<"" | "preview" | "download" | "images">("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewPages, setPreviewPages] = useState<string[]>([]);
@@ -142,6 +165,9 @@ export default function EstimateEditor({ initial, onBack }: Props) {
   const [preparedImages, setPreparedImages] = useState<{ source: Estimate; images: Blob[] | null } | null>(null);
   const clientNameRef = useRef<HTMLInputElement>(null);
   const firstRender = useRef(true);
+  const dirtyRef = useRef(false);
+  const latestRef = useRef(q);
+  latestRef.current = q;
   const partyIndex = Math.max(0, q.parties.findIndex((p) => p.id === activePartyId));
   const party = q.parties[partyIndex];
   const hasManyParties = q.parties.length > 1;
@@ -155,19 +181,44 @@ export default function EstimateEditor({ initial, onBack }: Props) {
     });
   };
 
+  const persistNow = useCallback(async (estimate: Estimate, keepalive = false) => {
+    setSaveState("saving");
+    try {
+      await saveEstimate(estimate, keepalive);
+      if (latestRef.current === estimate) dirtyRef.current = false;
+      setSaveState("saved");
+    } catch (e) {
+      console.error(e);
+      setSaveState("error");
+    }
+  }, []);
+
   // Autosave shortly after the last edit.
   useEffect(() => {
     if (firstRender.current) {
       firstRender.current = false;
       return;
     }
-    setSaved(false);
+    dirtyRef.current = true;
+    setSaveState("saving");
     const t = setTimeout(() => {
-      saveEstimate(q);
-      setSaved(true);
-    }, 500);
+      void persistNow(q);
+    }, 900);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, persistNow]);
+
+  useEffect(() => {
+    const flushOnHide = () => {
+      if (dirtyRef.current) void saveEstimate(latestRef.current, true);
+    };
+    window.addEventListener("pagehide", flushOnHide);
+    return () => window.removeEventListener("pagehide", flushOnHide);
+  }, []);
+
+  const handleBack = async () => {
+    if (dirtyRef.current) await persistNow(latestRef.current);
+    onBack();
+  };
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
   useEffect(() => () => previewPages.forEach((url) => URL.revokeObjectURL(url)), [previewPages]);
@@ -334,7 +385,7 @@ export default function EstimateEditor({ initial, onBack }: Props) {
 
   const addParty = () => {
     // A second sitting is usually on the same day at the same venue.
-    const next = createParty({ date: party.event.date, venue: party.event.venue });
+    const next = createParty({ date: party.event.date, venue: party.event.venue }, menuCatalog);
     update((d) => {
       d.parties.push(next);
       for (const p of d.parties) {
@@ -374,10 +425,33 @@ export default function EstimateEditor({ initial, onBack }: Props) {
     setNewCostId(id);
   };
 
-  const addDish = (si: number, name: string) =>
+  const saveDishToMaster = async (categoryTitle: string, name: string) => {
+    try {
+      const normalized = categoryTitle.trim().toLowerCase();
+      let targetCat = menuCatalog.find((c) => c.title.trim().toLowerCase() === normalized);
+      let latestCatalog = menuCatalog;
+      if (!targetCat) {
+        const created = await createMenuCategoryApi({ title: categoryTitle.trim() || "Custom" });
+        targetCat = created.category;
+        latestCatalog = created.menuCatalog;
+      }
+      const res = await createMenuItemApi({ categoryId: targetCat.id, name });
+      onMenuCatalogChange(res.menuCatalog.length ? res.menuCatalog : latestCatalog);
+    } catch (e) {
+      console.error(e);
+      notify("Added to estimate (menu sync failed)");
+    }
+  };
+
+  const addDish = (si: number, name: string, saveToMaster = false) => {
+    const categoryTitle = party.sections[si]?.title ?? "";
     setSection(si, (s) => {
       if (!s.items.some((it) => sameDish(it.name, name))) s.items.push({ id: uid(), name, qty: "" });
     });
+    if (saveToMaster && categoryTitle.trim()) {
+      void saveDishToMaster(categoryTitle, name);
+    }
+  };
 
   const toggleDish = (si: number, name: string) =>
     setSection(si, (s) => toggleItem(s, name));
@@ -405,7 +479,7 @@ export default function EstimateEditor({ initial, onBack }: Props) {
   const nextSection = party.sections[activeIndex + 1];
 
   const isSearching = !!dishSearch.trim();
-  const searchResults = searchChoices(dishSearch);
+  const searchResults = searchChoices(dishSearch, menuCatalog);
 
   // Keeps the open category visible in the row, so staff always see where they are.
   useEffect(() => {
@@ -464,7 +538,7 @@ export default function EstimateEditor({ initial, onBack }: Props) {
         <div className="bg-[#14120f] text-[#f8f3ea]">
           <div className="max-w-275 mx-auto px-1 md:px-8 pt-1 flex items-center gap-1">
             <button
-              onClick={onBack}
+              onClick={handleBack}
               aria-label="All estimates"
               className="min-h-11 min-w-11 px-2 flex items-center justify-center gap-2 text-[#f8f3ea] hover:text-[#e0c48a] transition-colors shrink-0"
             >
@@ -472,7 +546,19 @@ export default function EstimateEditor({ initial, onBack }: Props) {
               <span className="hidden sm:inline text-sm">All estimates</span>
             </button>
             <p className="flex-1 min-w-0 truncate font-playfair text-lg">{q.client.name.trim() || "New estimate"}</p>
-            <p className="shrink-0 px-2 text-sm text-[#cbbf9f]">{saved ? "Saved" : "Saving…"}</p>
+            {saveState === "error" ? (
+              <button
+                type="button"
+                onClick={() => void persistNow(latestRef.current)}
+                className="shrink-0 px-2 text-sm text-[#ffb4a9] underline underline-offset-4"
+              >
+                Save failed · Retry
+              </button>
+            ) : (
+              <p className="shrink-0 px-2 text-sm text-[#cbbf9f]">
+                {saveState === "saving" ? "Saving…" : "Saved"}
+              </p>
+            )}
           </div>
           <nav aria-label="Steps" className="max-w-275 mx-auto px-2 md:px-8 pb-2 pt-1 grid grid-cols-4 gap-1">
             {STEPS.map((label, i) => (
@@ -642,8 +728,11 @@ export default function EstimateEditor({ initial, onBack }: Props) {
               activeSection && (() => {
                 const sec = activeSection;
                 const si = activeIndex;
-                const choices = choicesFor(sec.title);
-                const moreChoices = moreChoicesFor(sec.title);
+                const choices = choicesFor(sec.title, menuCatalog);
+                const moreChoices = moreChoicesFor(sec.title, menuCatalog);
+                const inMasterCatalog = menuCatalog.some(
+                  (c) => c.title.trim().toLowerCase() === sec.title.trim().toLowerCase(),
+                );
                 const isTicked = (name: string) => sec.items.some((it) => sameDish(it.name, name));
                 // Anything ticked that is not in the main list stays visible at the top.
                 const extras = sec.items.filter((it) => it.name.trim() && !choices.some((name) => sameDish(name, it.name)));
@@ -659,16 +748,36 @@ export default function EstimateEditor({ initial, onBack }: Props) {
                     </div>
 
                     {/* Choice lists are tied to the title, so only custom sections can rename. */}
-                    {choices.length === 0 && (
-                      <Field label="Category name">
-                        <input
-                          className={inputCls}
-                          value={sec.title}
-                          autoFocus={sec.id === newSectionId}
-                          onFocus={(e) => { if (sec.id === newSectionId) e.target.select(); }}
-                          onChange={(e) => setSection(si, (s) => { s.title = e.target.value; })}
-                        />
-                      </Field>
+                    {!inMasterCatalog && (
+                      <div className="space-y-2">
+                        <Field label="Category name">
+                          <input
+                            className={inputCls}
+                            value={sec.title}
+                            autoFocus={sec.id === newSectionId}
+                            onFocus={(e) => { if (sec.id === newSectionId) e.target.select(); }}
+                            onChange={(e) => setSection(si, (s) => { s.title = e.target.value; })}
+                          />
+                        </Field>
+                        {sec.title.trim() && (
+                          <button
+                            type="button"
+                            className={quietBtnCls}
+                            onClick={async () => {
+                              try {
+                                const res = await createMenuCategoryApi({ title: sec.title.trim() });
+                                onMenuCatalogChange(res.menuCatalog);
+                                notify(`Saved "${res.category.title}" to master menu`);
+                              } catch (e) {
+                                console.error(e);
+                                notify("Could not save category");
+                              }
+                            }}
+                          >
+                            + Save category to master menu
+                          </button>
+                        )}
+                      </div>
                     )}
 
                     <div className={listCls}>
@@ -688,7 +797,7 @@ export default function EstimateEditor({ initial, onBack }: Props) {
                       </details>
                     )}
 
-                    <AddDish onAdd={(name) => addDish(si, name)} />
+                    <AddDish onAdd={(name, saveToMaster) => addDish(si, name, saveToMaster)} />
 
                     {nextSection && (
                       <button className={`${btnCls} w-full`} onClick={() => openCategory(nextSection.id)}>
@@ -875,6 +984,160 @@ export default function EstimateEditor({ initial, onBack }: Props) {
               )}
             </div>
 
+            <div className="rounded-lg border border-[#d9ccb4] bg-white p-4 space-y-3">
+              <div>
+                <h3 className="font-playfair text-lg text-[#5c4726]">Client Web Link</h3>
+                <p className="text-sm text-[#5f574b]">
+                  Let your client view and download this estimate from any phone or browser without logging in.
+                </p>
+              </div>
+              {shareToken ? (() => {
+                const shareUrl =
+                  typeof window !== "undefined"
+                    ? `${window.location.origin}/estimates/share/${shareToken}`
+                    : `/estimates/share/${shareToken}`;
+                const copyShareUrl = async () => {
+                  let copied = false;
+                  try {
+                    if (navigator.clipboard?.writeText) {
+                      await navigator.clipboard.writeText(shareUrl);
+                      copied = true;
+                    }
+                  } catch {
+                    copied = false;
+                  }
+                  if (!copied) {
+                    try {
+                      const el = document.createElement("textarea");
+                      el.value = shareUrl;
+                      el.setAttribute("readonly", "");
+                      el.style.position = "fixed";
+                      el.style.opacity = "0";
+                      document.body.append(el);
+                      el.select();
+                      copied = document.execCommand("copy");
+                      el.remove();
+                    } catch {
+                      copied = false;
+                    }
+                  }
+                  if (copied) {
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
+                    notify("Share link copied");
+                  } else {
+                    notify("Tap the link box to copy");
+                  }
+                };
+                return (
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        readOnly
+                        aria-label="Client share link"
+                        value={shareUrl}
+                        onClick={(e) => e.currentTarget.select()}
+                        className={`${inputCls} bg-[#f8f3ea]! text-sm!`}
+                      />
+                      <button
+                        type="button"
+                        className={`${primaryBtnCls} shrink-0`}
+                        onClick={copyShareUrl}
+                      >
+                        {linkCopied ? "Copied ✓" : "Copy"}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {typeof navigator !== "undefined" && "share" in navigator && (
+                        <button
+                          type="button"
+                          className={btnCls}
+                          onClick={async () => {
+                            try {
+                              await navigator.share({
+                                title: `${q.documentTitle} ${q.number} - ${q.client.name}`,
+                                url: shareUrl,
+                              });
+                            } catch (e) {
+                              if ((e as Error).name !== "AbortError") notify("Could not open sharing");
+                            }
+                          }}
+                        >
+                          Share Link
+                        </button>
+                      )}
+                      <a
+                        href={`/estimates/share/${shareToken}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={btnCls}
+                      >
+                        Open
+                      </a>
+                      <button
+                        type="button"
+                        disabled={shareBusy}
+                        className={`${btnCls} border-[#a32a1c]! text-[#a32a1c]! hover:bg-[#fbeae7]!`}
+                        onClick={async () => {
+                          if (!confirm("Disable this share link? Clients with the old link will no longer be able to open it.")) return;
+                          setShareBusy(true);
+                          try {
+                            await revokeShareLink(q.id);
+                            setShareToken(null);
+                            setLinkCopied(false);
+                            notify("Share link disabled");
+                          } catch {
+                            notify("Could not disable link");
+                          } finally {
+                            setShareBusy(false);
+                          }
+                        }}
+                      >
+                        Disable Link
+                      </button>
+                    </div>
+                  </div>
+                );
+              })() : (
+                <button
+                  type="button"
+                  disabled={shareBusy}
+                  className={btnCls}
+                  onClick={async () => {
+                    setShareBusy(true);
+                    try {
+                      if (dirtyRef.current) await persistNow(latestRef.current);
+                      const token = await createShareLink(q.id);
+                      setShareToken(token);
+                      const url = `${window.location.origin}/estimates/share/${token}`;
+                      let copied = false;
+                      try {
+                        if (navigator.clipboard?.writeText) {
+                          await navigator.clipboard.writeText(url);
+                          copied = true;
+                        }
+                      } catch {
+                        copied = false;
+                      }
+                      if (copied) {
+                        setLinkCopied(true);
+                        setTimeout(() => setLinkCopied(false), 2000);
+                        notify("Share link created & copied");
+                      } else {
+                        notify("Share link created — tap Copy");
+                      }
+                    } catch {
+                      notify("Could not create share link");
+                    } finally {
+                      setShareBusy(false);
+                    }
+                  }}
+                >
+                  {shareBusy ? "Creating link…" : "Create & Copy Share Link"}
+                </button>
+              )}
+            </div>
+
             <details className="group border-t border-[#d9ccb4] pt-2">
               <summary className={`${quietBtnCls} inline-flex items-center ${summaryCls}`}>
                 <span className="group-open:hidden">Edit terms and company details</span>
@@ -965,7 +1228,7 @@ export default function EstimateEditor({ initial, onBack }: Props) {
             {step < STEPS.length - 1 ? (
               <button className={`${primaryBtnCls} flex-1`} onClick={() => goToStep(step + 1)}>Next: {STEPS[step + 1]}</button>
             ) : (
-              <button className={`${primaryBtnCls} flex-1`} onClick={onBack}>Done</button>
+              <button className={`${primaryBtnCls} flex-1`} onClick={handleBack}>Done</button>
             )}
           </div>
         </div>
