@@ -24,9 +24,22 @@ export default function EstimatePwaInstall({ showButton = true }: { showButton?:
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/estimates/sw.js", { scope: "/estimates" })
-        .catch(() => {});
+      if (process.env.NODE_ENV === "production") {
+        navigator.serviceWorker
+          .register("/estimates/sw.js", { scope: "/estimates" })
+          .catch(() => {});
+      } else {
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+          .catch(() => {});
+        if ("caches" in window) {
+          caches
+            .keys()
+            .then((keys) => Promise.all(keys.filter((k) => k.startsWith("adco-estimates-")).map((k) => caches.delete(k))))
+            .catch(() => {});
+        }
+      }
     }
 
     if (!showButton || isStandalone()) return;

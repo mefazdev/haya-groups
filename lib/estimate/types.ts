@@ -2,6 +2,7 @@ export interface LineItem {
   id: string;
   name: string;
   qty: string;
+  rate?: number;
 }
 
 export interface Section {

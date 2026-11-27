@@ -1,7 +1,69 @@
-import type { CostRow, Estimate, Party, Section } from "./types";
+import type { CostRow, Estimate, MenuCategoryRecord, Party, Section } from "./types";
 
 export const uid = () =>
   Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+
+export const isServiceSection = (sectionTitle: string, catalog?: MenuCategoryRecord[]): boolean => {
+  const normalized = sectionTitle.trim().toLowerCase();
+  if (catalog && catalog.length > 0) {
+    const match = catalog.find((c) => c.title.trim().toLowerCase() === normalized);
+    if (match) return match.kind === "utensil";
+  }
+  return normalized === "service utensils";
+};
+
+/** Sums flat item rates into food total and service total for one party. */
+export const partyItemTotals = (party: Party, catalog?: MenuCategoryRecord[]) => {
+  let foodTotal = 0;
+  let serviceTotal = 0;
+  for (const sec of party.sections) {
+    const targetIsService = isServiceSection(sec.title, catalog);
+    for (const item of sec.items) {
+      if (!item.name.trim()) continue;
+      const rate = Number(item.rate) || 0;
+      if (rate <= 0) continue;
+      if (targetIsService) serviceTotal += rate;
+      else foodTotal += rate;
+    }
+  }
+  return { foodTotal, serviceTotal };
+};
+
+/** Syncs calculated dish/service item rates onto the estimate's Price cost rows. */
+export const syncItemRatesToCosts = (
+  d: Estimate,
+  catalog?: MenuCategoryRecord[],
+  force?: { foodPartyIds?: Set<string>; service?: boolean },
+) => {
+  let totalService = 0;
+
+  for (const party of d.parties) {
+    const { foodTotal, serviceTotal } = partyItemTotals(party, catalog);
+    totalService += serviceTotal;
+
+    if (foodTotal > 0 || force?.foodPartyIds?.has(party.id)) {
+      let row = d.costs.find((c) => c.partyId === party.id);
+      if (!row && d.parties.length === 1) {
+        row = d.costs.find((c) => !c.partyId && /food/i.test(c.description));
+      }
+      if (row) {
+        row.amount = foodTotal;
+      } else if (foodTotal > 0) {
+        const at = d.costs.map((c) => !!c.partyId).lastIndexOf(true) + 1;
+        d.costs.splice(at, 0, { id: uid(), description: "Total Food Cost", amount: foodTotal, partyId: party.id });
+      }
+    }
+  }
+
+  if (totalService > 0 || force?.service) {
+    const serviceRow = d.costs.find((c) => !c.partyId && /service/i.test(c.description));
+    if (serviceRow) {
+      serviceRow.amount = totalService;
+    } else if (totalService > 0) {
+      d.costs.push({ id: uid(), description: "Service Cost", amount: totalService });
+    }
+  }
+};
 
 export const grandTotalOf = (q: Estimate) =>
   q.costs.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);

@@ -1,4 +1,4 @@
-const CACHE_NAME = "adco-estimates-v1";
+const CACHE_NAME = "adco-estimates-v2";
 const PRECACHE_URLS = [
   "/estimates/icon-192.png",
   "/estimates/icon-512.png",
@@ -30,6 +30,10 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Never intercept or cache Next.js chunks in local development.
+  const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (isLocalhost) return;
 
   // Never cache API calls or authentication endpoints.
   if (url.pathname.startsWith("/estimates/api/")) return;

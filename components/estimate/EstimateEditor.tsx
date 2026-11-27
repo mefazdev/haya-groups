@@ -1,8 +1,18 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState, ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useLayoutEffect, useRef, useState, ReactNode } from "react";
 import type { Estimate, MenuCategoryRecord, Section } from "@/lib/estimate/types";
-import { amountInWords, costLabel, formatINR, grandTotalOf, partyLabel, uid } from "@/lib/estimate/utils";
+import {
+  amountInWords,
+  costLabel,
+  formatINR,
+  grandTotalOf,
+  isServiceSection,
+  partyItemTotals,
+  partyLabel,
+  syncItemRatesToCosts,
+  uid,
+} from "@/lib/estimate/utils";
 import {
   createMenuCategoryApi,
   createMenuItemApi,
@@ -61,15 +71,72 @@ function Field({ label, children, className = "" }: { label: string; children: R
 }
 
 // The whole row is the tap target, and a ticked row fills with gold.
-function DishRow({ name, hint, checked, onToggle }: { name: string; hint?: string; checked: boolean; onToggle: () => void }) {
+function DishRow({
+  name,
+  hint,
+  checked,
+  rate,
+  onToggle,
+  onRateChange,
+}: {
+  name: string;
+  hint?: string;
+  checked: boolean;
+  rate?: number;
+  onToggle: () => void;
+  onRateChange: (rate: number | undefined) => void;
+}) {
+  const rateRef = useRef<HTMLInputElement>(null);
+  const wasChecked = useRef(checked);
+
+  useLayoutEffect(() => {
+    if (!wasChecked.current && checked) {
+      rateRef.current?.focus();
+    }
+    wasChecked.current = checked;
+  }, [checked]);
+
   return (
-    <label className="flex items-center gap-3 min-h-12 px-3 py-2 rounded-lg border border-[#e4d9c3] bg-white text-base text-[#26221c] cursor-pointer has-checked:bg-[#f3e6c9] has-checked:border-[#a88a55] has-checked:font-medium transition-colors">
-      <input type="checkbox" className="accent-[#6f5629] w-6 h-6 shrink-0" checked={checked} onChange={onToggle} />
-      <span className="flex-1 min-w-0">
-        {name}
-        {hint && <span className="block text-sm font-normal text-[#5f574b]">{hint}</span>}
-      </span>
-    </label>
+    <div
+      className={`flex items-center gap-2 min-h-12 px-3 py-2 rounded-lg border text-base text-[#26221c] transition-colors ${checked ? "bg-[#f3e6c9] border-[#a88a55] font-medium" : "bg-white border-[#e4d9c3]"
+        }`}
+    >
+      <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+        <input type="checkbox" className="accent-[#6f5629] w-6 h-6 shrink-0" checked={checked} onChange={onToggle} />
+        <span className="flex-1 min-w-0">
+          {name}
+          {hint && <span className="block text-sm font-normal text-[#5f574b]">{hint}</span>}
+        </span>
+      </label>
+      {checked && (
+        <div className="relative w-24 sm:w-28 shrink-0">
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#5f574b] pointer-events-none" aria-hidden>
+            ₹
+          </span>
+          <input
+            ref={rateRef}
+            type="number"
+            inputMode="decimal"
+            enterKeyHint="done"
+            min={0}
+            step="any"
+            value={rate ?? ""}
+            placeholder="Rate"
+            aria-label={`Rate in rupees for ${name}`}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (!raw) {
+                onRateChange(undefined);
+                return;
+              }
+              const parsed = Number(raw);
+              onRateChange(Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined);
+            }}
+            className="w-full min-h-9 rounded-md bg-white border border-[#a08f70] pl-5 pr-2 py-1 text-right text-base font-normal text-[#26221c] placeholder:text-[#7a7163] focus:outline-none focus:border-[#6f5629] focus:ring-2 focus:ring-[#a88a55]/40"
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -88,10 +155,14 @@ const canSendFiles = () =>
 
 const sameDish = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-const toggleItem = (section: Section, name: string) => {
-  const remaining = section.items.filter((it) => !sameDish(it.name, name));
-  if (remaining.length === section.items.length) section.items.push({ id: uid(), name, qty: "" });
-  else section.items = remaining;
+const toggleItem = (section: Section, name: string): boolean => {
+  const removed = section.items.find((it) => sameDish(it.name, name));
+  if (!removed) {
+    section.items.push({ id: uid(), name, qty: "" });
+    return false;
+  }
+  section.items = section.items.filter((it) => !sameDish(it.name, name));
+  return (Number(removed.rate) || 0) > 0;
 };
 
 const namedItemCount = (section: Section) => section.items.filter((it) => it.name.trim()).length;
@@ -401,9 +472,11 @@ export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChan
   const removeParty = () => {
     const label = partyLabel(party, partyIndex);
     if (!confirm(`Remove "${label}" with its menu and food cost?`)) return;
+    const hadServiceRates = partyItemTotals(party, menuCatalog).serviceTotal > 0;
     update((d) => {
       d.parties.splice(partyIndex, 1);
       d.costs = d.costs.filter((c) => c.partyId !== party.id);
+      if (hadServiceRates) syncItemRatesToCosts(d, menuCatalog, { service: true });
     });
     setActivePartyId(q.parties[partyIndex === 0 ? 1 : partyIndex - 1].id);
   };
@@ -453,8 +526,36 @@ export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChan
     }
   };
 
+  const syncAfterSectionEdit = (
+    d: Estimate,
+    sectionTitle: string,
+    removedRated: boolean,
+  ) => {
+    if (!removedRated) {
+      syncItemRatesToCosts(d, menuCatalog);
+      return;
+    }
+    const force = isServiceSection(sectionTitle, menuCatalog)
+      ? { service: true }
+      : { foodPartyIds: new Set([d.parties[partyIndex].id]) };
+    syncItemRatesToCosts(d, menuCatalog, force);
+  };
+
   const toggleDish = (si: number, name: string) =>
-    setSection(si, (s) => toggleItem(s, name));
+    update((d) => {
+      const sec = d.parties[partyIndex].sections[si];
+      const removedRated = toggleItem(sec, name);
+      syncAfterSectionEdit(d, sec.title, removedRated);
+    });
+
+  const setDishRate = (si: number, name: string, rate: number | undefined) =>
+    update((d) => {
+      const sec = d.parties[partyIndex].sections[si];
+      const item = sec.items.find((it) => sameDish(it.name, name));
+      if (!item) return;
+      item.rate = rate;
+      syncAfterSectionEdit(d, sec.title, true);
+    });
 
   // Older estimates may not have this section yet, so it is created on first use.
   const toggleSearchResult = (sectionTitle: string, name: string) =>
@@ -465,7 +566,17 @@ export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChan
         section = { id: uid(), title: sectionTitle, columns: 1, items: [] };
         sections.push(section);
       }
-      toggleItem(section, name);
+      const removedRated = toggleItem(section, name);
+      syncAfterSectionEdit(d, section.title, removedRated);
+    });
+
+  const setSearchItemRate = (sectionTitle: string, name: string, rate: number | undefined) =>
+    update((d) => {
+      const sec = d.parties[partyIndex].sections.find((s) => sameDish(s.title, sectionTitle));
+      const item = sec?.items.find((it) => sameDish(it.name, name));
+      if (!sec || !item) return;
+      item.rate = rate;
+      syncAfterSectionEdit(d, sec.title, true);
     });
 
   const total = grandTotalOf(q);
@@ -704,15 +815,22 @@ export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChan
             {isSearching ? (
               searchResults.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {searchResults.map(({ section, name }) => (
-                    <DishRow
-                      key={`${section}-${name}`}
-                      name={name}
-                      hint={section}
-                      checked={!!party.sections.find((s) => sameDish(s.title, section))?.items.some((it) => sameDish(it.name, name))}
-                      onToggle={() => toggleSearchResult(section, name)}
-                    />
-                  ))}
+                  {searchResults.map(({ section, name }) => {
+                    const matchedItem = party.sections
+                      .find((s) => sameDish(s.title, section))
+                      ?.items.find((it) => sameDish(it.name, name));
+                    return (
+                      <DishRow
+                        key={`${section}-${name}`}
+                        name={name}
+                        hint={section}
+                        checked={!!matchedItem}
+                        rate={matchedItem?.rate}
+                        onToggle={() => toggleSearchResult(section, name)}
+                        onRateChange={(r) => setSearchItemRate(section, name, r)}
+                      />
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -733,12 +851,23 @@ export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChan
                 const inMasterCatalog = menuCatalog.some(
                   (c) => c.title.trim().toLowerCase() === sec.title.trim().toLowerCase(),
                 );
-                const isTicked = (name: string) => sec.items.some((it) => sameDish(it.name, name));
+                const findItem = (name: string) => sec.items.find((it) => sameDish(it.name, name));
                 // Anything ticked that is not in the main list stays visible at the top.
                 const extras = sec.items.filter((it) => it.name.trim() && !choices.some((name) => sameDish(name, it.name)));
-                const rows = (names: string[]) => names.map((name) => (
-                  <DishRow key={name} name={name} checked={isTicked(name)} onToggle={() => toggleDish(si, name)} />
-                ));
+                const rows = (names: string[]) =>
+                  names.map((name) => {
+                    const item = findItem(name);
+                    return (
+                      <DishRow
+                        key={name}
+                        name={name}
+                        checked={!!item}
+                        rate={item?.rate}
+                        onToggle={() => toggleDish(si, name)}
+                        onRateChange={(r) => setDishRate(si, name, r)}
+                      />
+                    );
+                  });
                 const listCls = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2";
                 return (
                   <div className="space-y-4">
@@ -782,7 +911,14 @@ export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChan
 
                     <div className={listCls}>
                       {extras.map((it) => (
-                        <DishRow key={it.id} name={it.name} checked onToggle={() => toggleDish(si, it.name)} />
+                        <DishRow
+                          key={it.id}
+                          name={it.name}
+                          checked
+                          rate={it.rate}
+                          onToggle={() => toggleDish(si, it.name)}
+                          onRateChange={(r) => setDishRate(si, it.name, r)}
+                        />
                       ))}
                       {rows(choices)}
                     </div>
@@ -831,7 +967,14 @@ export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChan
                                 <button
                                   className="min-h-11 text-xl text-[#5f574b] hover:text-[#a32a1c]"
                                   aria-label={`Remove ${it.name || "dish"}`}
-                                  onClick={() => setSection(si, (s) => { s.items.splice(ii, 1); })}
+                                  onClick={() =>
+                                    update((d) => {
+                                      const targetSec = d.parties[partyIndex].sections[si];
+                                      const removed = targetSec.items[ii];
+                                      targetSec.items.splice(ii, 1);
+                                      syncAfterSectionEdit(d, targetSec.title, (Number(removed?.rate) || 0) > 0);
+                                    })
+                                  }
                                 >
                                   &times;
                                 </button>
@@ -845,7 +988,13 @@ export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChan
                           <button
                             className={dangerBtnCls}
                             onClick={() => {
-                              if (confirm(`Delete category "${sec.title}"?`)) update((d) => { d.parties[partyIndex].sections.splice(si, 1); });
+                              if (!confirm(`Delete category "${sec.title}"?`)) return;
+                              update((d) => {
+                                const targetSec = d.parties[partyIndex].sections[si];
+                                const hadRates = targetSec.items.some((it) => (Number(it.rate) || 0) > 0);
+                                d.parties[partyIndex].sections.splice(si, 1);
+                                syncAfterSectionEdit(d, targetSec.title, hadRates);
+                              });
                             }}
                           >
                             Delete category
@@ -860,69 +1009,82 @@ export default function EstimateEditor({ initial, menuCatalog, onMenuCatalogChan
           </div>
         )}
 
-        {step === 2 && (
-          <Group title="Price">
-            <div className="space-y-2.5">
-              {q.costs.map((c, ci) => {
-                // A function's food cost row follows the function, so it is named and removed with it.
-                const isPartyRow = hasManyParties && !!c.partyId;
-                const label = costLabel(q, c);
-                return (
-                  <div key={c.id} className="grid grid-cols-[1fr_7.5rem_2.75rem] md:grid-cols-[1fr_10rem_2.75rem] items-center gap-2">
-                    {isPartyRow ? (
-                      <p className="text-base font-medium">{label}</p>
-                    ) : (
-                      <input
-                        className={`${inputCls} font-medium px-2! ${label ? "border-transparent! bg-transparent! focus:border-[#6f5629]! focus:bg-white!" : ""}`}
-                        value={label}
-                        autoFocus={c.id === newCostId}
-                        placeholder="Charge name"
-                        aria-label="Description"
-                        onChange={(e) => update((d) => { d.costs[ci].description = e.target.value; })}
-                      />
-                    )}
-                    <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-[#5f574b]" aria-hidden>₹</span>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        step="any"
-                        className={`${inputCls} pl-6! pr-2! text-right`}
-                        value={c.amount || ""}
-                        placeholder="0"
-                        aria-label={`Amount in rupees for ${label || "this charge"}`}
-                        onChange={(e) => update((d) => { d.costs[ci].amount = Number(e.target.value) || 0; })}
-                      />
+        {step === 2 && (() => {
+          const foodTotals = new Map(q.parties.map((p) => [p.id, partyItemTotals(p, menuCatalog).foodTotal]));
+          const serviceRateTotal = q.parties.reduce((sum, p) => sum + partyItemTotals(p, menuCatalog).serviceTotal, 0);
+          return (
+            <Group title="Price">
+              <div className="space-y-2.5">
+                {q.costs.map((c, ci) => {
+                  // A function's food cost row follows the function, so it is named and removed with it.
+                  const isPartyRow = hasManyParties && !!c.partyId;
+                  const label = costLabel(q, c);
+                  const isFoodAuto =
+                    (c.partyId ? (foodTotals.get(c.partyId) ?? 0) > 0 : q.parties.length === 1 && /food/i.test(c.description) && (foodTotals.get(q.parties[0].id) ?? 0) > 0);
+                  const isServiceAuto = !c.partyId && /service/i.test(c.description) && serviceRateTotal > 0;
+                  const isAuto = isFoodAuto || isServiceAuto;
+                  return (
+                    <div key={c.id} className="grid grid-cols-[1fr_7.5rem_2.75rem] md:grid-cols-[1fr_10rem_2.75rem] items-center gap-2">
+                      <div>
+                        {isPartyRow ? (
+                          <p className="text-base font-medium">{label}</p>
+                        ) : (
+                          <input
+                            className={`${inputCls} font-medium px-2! ${label ? "border-transparent! bg-transparent! focus:border-[#6f5629]! focus:bg-white!" : ""}`}
+                            value={label}
+                            autoFocus={c.id === newCostId}
+                            placeholder="Charge name"
+                            aria-label="Description"
+                            onChange={(e) => update((d) => { d.costs[ci].description = e.target.value; })}
+                          />
+                        )}
+                        {isAuto && (
+                          <p className="px-2 text-xs text-[#6f5629]">Calculated from selected item rates</p>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-[#5f574b]" aria-hidden>₹</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="any"
+                          className={`${inputCls} pl-6! pr-2! text-right`}
+                          value={c.amount || ""}
+                          placeholder="0"
+                          aria-label={`Amount in rupees for ${label || "this charge"}`}
+                          onChange={(e) => update((d) => { d.costs[ci].amount = Number(e.target.value) || 0; })}
+                        />
+                      </div>
+                      {isPartyRow ? <span /> : (
+                        <button
+                          className="min-h-11 text-xl text-[#5f574b] hover:text-[#a32a1c]"
+                          aria-label={`Delete ${label || "this charge"}`}
+                          onClick={() => {
+                            if (c.amount && !confirm(`Delete "${label}"?`)) return;
+                            update((d) => { d.costs.splice(ci, 1); });
+                          }}
+                        >
+                          &times;
+                        </button>
+                      )}
                     </div>
-                    {isPartyRow ? <span /> : (
-                      <button
-                        className="min-h-11 text-xl text-[#5f574b] hover:text-[#a32a1c]"
-                        aria-label={`Delete ${label || "this charge"}`}
-                        onClick={() => {
-                          if (c.amount && !confirm(`Delete "${label}"?`)) return;
-                          update((d) => { d.costs.splice(ci, 1); });
-                        }}
-                      >
-                        &times;
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <button className={`${btnCls} w-full sm:w-auto border-dashed mt-4`} onClick={addCost}>+ Add another charge</button>
-
-            <div className="mt-6 rounded-lg bg-[#14120f] text-[#f8f3ea] p-4 md:ml-auto md:w-1/2">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-lg">Total</span>
-                <span className="font-playfair text-2xl text-[#e0c48a]">₹ {formatINR(total)}</span>
+                  );
+                })}
               </div>
-              <p className="mt-1 text-sm text-[#cbbf9f]">{amountInWords(total)}</p>
-            </div>
-          </Group>
-        )}
+
+              <button className={`${btnCls} w-full sm:w-auto border-dashed mt-4`} onClick={addCost}>+ Add another charge</button>
+
+              <div className="mt-6 rounded-lg bg-[#14120f] text-[#f8f3ea] p-4 md:ml-auto md:w-1/2">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-lg">Total</span>
+                  <span className="font-playfair text-2xl text-[#e0c48a]">₹ {formatINR(total)}</span>
+                </div>
+                <p className="mt-1 text-sm text-[#cbbf9f]">{amountInWords(total)}</p>
+              </div>
+            </Group>
+          );
+        })()}
 
         {step === 3 && (
           <>
